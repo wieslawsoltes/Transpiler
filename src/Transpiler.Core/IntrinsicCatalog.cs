@@ -6,10 +6,12 @@ public static class IntrinsicCatalog
     public static readonly string[] ExceptionTypes = ["System.Exception", "System.SystemException", "System.ArithmeticException",
         "System.DivideByZeroException", "System.OverflowException", "System.NullReferenceException", "System.IndexOutOfRangeException",
         "System.ArrayTypeMismatchException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentOutOfRangeException",
-        "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
+        "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
     private static readonly IReadOnlyDictionary<string, string> Entries = Build();
-    public static string? Find(MethodReference method)
+    public static string? Find(MethodReference method, AssemblyModel? image = null)
     {
+        var delegateIntrinsic = DelegateContracts.Find(method, image);
+        if (delegateIntrinsic is not null && (AssemblyLinker.IsFramework(method.Assembly) || image?.FindType(method.Type)?.BaseType == "System.MulticastDelegate")) return delegateIntrinsic;
         if (method.Assembly is not ("System.Runtime" or "System.Console" or "System.Private.CoreLib" or "mscorlib" or "netstandard")) return null;
         return Entries.GetValueOrDefault(method.Key + "->" + method.ReturnType + (method.Instance ? ":instance" : ":static"));
     }
@@ -25,6 +27,7 @@ public static class IntrinsicCatalog
             Add("System.Console", "Write", "System.Void", [type], "console.write");
         }
         Add("System.Console", "WriteLine", "System.Void", [], "console.line");
+        Add("System.Environment", "get_CurrentManagedThreadId", "System.Int32", [], "environment.thread");
         Add("System.Object", ".ctor", "System.Void", [], "object.ctor", true);
         Add("System.Object", "ToString", "System.String", [], "object.string", true);
         Add("System.Object", "ReferenceEquals", "System.Boolean", ["System.Object", "System.Object"], "reference.equals");
