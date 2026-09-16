@@ -125,6 +125,8 @@ def boundaries(h):
 
 
 def register(h):
+    import stream_batch
+    stream_batch.register(h)
     import block_batch
     block_batch.register(h)
     import awaitable_batch

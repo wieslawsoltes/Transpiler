@@ -9,7 +9,8 @@ def run(h):
     fixtures = [
         ('programs', 'ControlFlow'), ('programs', 'Exceptions'), ('programs', 'ValueStorage'), ('programs', 'NumericEdges'),
         ('bcl', 'CancellationComposition'), ('bcl', 'RectangularArrays'), ('bcl', 'ArrayConversions'),
-        ('bcl', 'TaskComposition'), ('bcl', 'LinqCollections'), ('bcl', 'ValueTasks')]
+        ('bcl', 'TaskComposition'), ('bcl', 'LinqCollections'), ('bcl', 'ValueTasks'),
+        ('bcl', 'AsyncStreams'), ('bcl', 'ValueTaskSources')]
     metrics = []
     for folder, name in fixtures:
         for debug in (False, True):

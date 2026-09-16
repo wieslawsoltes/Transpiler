@@ -95,7 +95,12 @@ public readonly struct ValueTask<T> : IEquatable<ValueTask<T>>
     public override int GetHashCode() => _source != null ? _source.GetHashCode() : _task != null ? _task.GetHashCode() : (_result == null ? 0 : EqualityComparer<T>.Default.GetHashCode(_result));
     public static bool operator ==(ValueTask<T> left, ValueTask<T> right) => left.Equals(right);
     public static bool operator !=(ValueTask<T> left, ValueTask<T> right) => !left.Equals(right);
-    public override string ToString() => IsCompletedSuccessfully ? (Result == null ? "" : Result.ToString()!) : "";
+    public override string ToString()
+    {
+        if (!IsCompletedSuccessfully) return "";
+        var result = Result; // A source-backed operation must be consumed exactly once.
+        return result == null ? "" : result.ToString()!;
+    }
 }
 
 public readonly struct ValueTaskAwaiter : ICriticalNotifyCompletion
