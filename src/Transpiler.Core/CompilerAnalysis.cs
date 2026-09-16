@@ -2,7 +2,10 @@ using System.Reflection.Emit;
 
 namespace Transpiler.Core;
 
-public sealed record MethodAnalysis(MethodDefinitionModel Method, IReadOnlyDictionary<int, string[]> StackBefore);
+public sealed record MethodAnalysis(MethodDefinitionModel Method, IReadOnlyDictionary<int, string[]> StackBefore)
+{
+    public CilControlFlowGraph? ControlFlow { get; init; }
+}
 public sealed record CompilationAnalysis(AssemblyModel Assembly, MethodAnalysis[] Methods, string[] Exports);
 
 /// <summary>Closed-world reachability, explicit capabilities, and fixed-point evaluation-stack analysis; not a security verifier.</summary>
@@ -111,7 +114,11 @@ public static partial class CompilerAnalysis
             }
             if (errors.Count == before)
             {
-                try { analyses.Add(new(method, method.IsAbstract || runtimeBody ? new Dictionary<int, string[]>() : Verify(image, method))); }
+                try
+                {
+                    var flow = CilControlFlow.Build(method);
+                    analyses.Add(new(method, method.IsAbstract || runtimeBody ? new Dictionary<int, string[]>() : Verify(image, method)) { ControlFlow = flow });
+                }
                 catch (CompilationException ex) { errors.AddRange(ex.Diagnostics); }
             }
         }

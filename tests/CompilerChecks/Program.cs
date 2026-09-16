@@ -1,5 +1,7 @@
 using Transpiler.Core;
 
+if (args.Length == 1 && args[0] == "--flow") { FlowChecks.Run(); return; }
+
 // No external test packages: exercise hand-authored normalized CIL shapes unreachable from safe C# source.
 static MethodDefinitionModel Method(params (string Op, object? Operand)[] body) => new(
     new(1, "Checks", "[Checks]Program", "M", [], "System.Int32", false, 0),

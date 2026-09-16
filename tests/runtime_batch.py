@@ -4,6 +4,7 @@ import sys
 
 def register(h):
     h.record('compiler/definite-assignment', lambda: compiler_checks(h))
+    h.record('compiler/control-flow', lambda: control_flow(h))
     h.record('bcl/original-catalog', lambda: original_catalog(h))
     h.record('host/liveness-barrier', lambda: liveness_barrier(h))
     for debug in (False, True):
@@ -83,3 +84,23 @@ try {
 """, encoding='utf-8')
     assert h.run('node',driver).stdout == 'host liveness verified\n'
     return {'specifiedKeptAliveBarrier':True,'unavailableHostCapabilityRejected':True}
+
+
+def control_flow(h):
+    result = h.run('dotnet', h.ROOT/'tests/CompilerChecks/bin/Release/net10.0/CompilerChecks.dll', '--flow').stdout
+    assert result == 'Control flow: 31 shapes and graph contracts passed\n', result
+    d = h.OUT/'control-flow'; d.mkdir(parents=True, exist_ok=True)
+    path = d/'analysis.json'
+    h.cli('analyze', h.ROOT/'tests/programs/Exceptions.cs', '--out', path)
+    analysis = json.loads(path.read_text())
+    kinds = set()
+    for method in analysis['methods']:
+        graph = method['controlFlow']
+        assert graph['exceptionalEdgesAreConservative'] is True
+        starts = {block['start'] for block in graph['blocks']}
+        for block in graph['blocks']:
+            for edge in block['successors']:
+                assert edge['target'] is None or edge['target'] in starts
+                kinds.add(edge['kind'])
+    assert {'finally-unwind', 'leave-continuation', 'exception-search', 'resume-continuation'} <= kinds
+    return {'malformedAndValidShapes':31,'explicitExceptionEdges':True,'graphIsNotAnExecutableUnwinder':True}
