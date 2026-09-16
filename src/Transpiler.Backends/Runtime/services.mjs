@@ -20,7 +20,13 @@ class HostedRuntime extends ManagedRuntime {
     external(method, args) {
         const op = method.intrinsic;
         if (op === 'gc.keep-alive') {
-            // Passing the actual object through the call establishes this liveness boundary.
+            // An empty JS call is not a specified liveness barrier. WeakRef construction/deref
+            // uses ECMAScript's kept-alive list until the end of the current synchronous job.
+            if (args[0] !== null) {
+                if (typeof WeakRef !== 'function') throw new Error('GC.KeepAlive requires host WeakRef support');
+                this.keepAliveBoundary = new WeakRef(args[0]);
+                this.keepAliveBoundary.deref();
+            }
             return null;
         }
         if (op === 'object.identity-hash') {

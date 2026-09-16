@@ -125,6 +125,8 @@ def boundaries(h):
 
 
 def register(h):
+    import runtime_batch
+    runtime_batch.register(h)
     h.record('linking/three-assembly-graph',lambda:graph(h))
     h.record('bcl/provenance',lambda:provenance(h))
     h.record('host/async-and-roots',lambda:async_host(h))
