@@ -76,8 +76,6 @@ public static partial class CompilerAnalysis
                 if (!Supported.Contains(i.Op) && !Conversions.Contains(i.Op)) Error("TR2001", $"Opcode '{i.Op}' is not supported by portable-mvp.", i.Offset);
                 if (i.Operand is MethodReference call)
                 {
-                    if (ValueSemanticsContracts.Find(call) == "value.compare" && call.GenericArguments[0] == "System.String")
-                        Error("TR2300", "Culture-dependent string ordering requires a globalization provider; supply StringComparer.Ordinal explicitly.", i.Offset);
                     if (call.GenericArity != 0) Error("TR2005", "Generic method instantiations are not yet supported.", i.Offset);
                     foreach (var type in call.Parameters.Append(call.ReturnType)) Type(type, i.Offset);
                     if (image.Resolve(call) is { } target)

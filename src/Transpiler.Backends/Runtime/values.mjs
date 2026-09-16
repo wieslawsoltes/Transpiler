@@ -166,12 +166,18 @@ class ValueRuntime extends HostedRuntime {
             if (Number.isNaN(b)) return 1;
             return a === b ? 0 : a < b ? -1 : 1;
         }
+        if (a instanceof CliString)
+            throw new Error('TR2300: Culture-dependent string ordering is unavailable; use StringComparer.Ordinal or an explicit comparer.');
+        if (a instanceof CliBox && (typeof a.value === 'number' || typeof a.value === 'bigint')) {
+            if (!(b instanceof CliBox) || a.type !== b.type) this.fail('System.ArgumentException', 'Objects must have compatible comparison types.');
+            return this.semantic_compare(a.value, b.value, a.type);
+        }
         let id = this.contract_slot(type, 'System.IComparable`1', 'CompareTo');
         if (id) {
             let receiver = this.meta.types[type]?.valueType ? this.cell_ref([this.copy_value(a)], 0, type) : a;
             return this.call(id, [receiver, b], true, type);
         }
-        id = this.contract_slot(type, 'System.IComparable', 'CompareTo');
+        id = this.contract_slot(this.actual_type(a, type), 'System.IComparable', 'CompareTo');
         if (id) return this.call(id, [this.box(a,type), this.box(b,type)], true);
         this.fail('System.ArgumentException', 'At least one object must implement IComparable.');
     }

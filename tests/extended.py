@@ -112,7 +112,7 @@ def boundaries(h):
         'resurrection':'var w=new System.WeakReference<object>(new object(),true);',
         'thread-pool':'System.Threading.Tasks.Task.Run(()=>42).GetAwaiter().GetResult();',
         'delay':'System.Threading.Tasks.Task.Delay(1).GetAwaiter().GetResult();',
-        'unsupported-list-member':'var l=new System.Collections.Generic.List<int>();l.Sort();',
+        'unsupported-list-member':'var l=new System.Collections.Generic.List<int>();l.AsReadOnly();',
         'reflection':'System.Console.WriteLine(typeof(Program).Name);',
     }
     for name,statement in samples.items():

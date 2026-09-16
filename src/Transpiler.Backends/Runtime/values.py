@@ -171,11 +171,16 @@ class ValueRuntime(HostedRuntime):
             if isinstance(a, float) and math.isnan(a): return 0 if isinstance(b, float) and math.isnan(b) else -1
             if isinstance(b, float) and math.isnan(b): return 1
             return 0 if a == b else -1 if a < b else 1
+        if isinstance(a, CliString):
+            raise RuntimeError('TR2300: Culture-dependent string ordering is unavailable; use StringComparer.Ordinal or an explicit comparer.')
+        if isinstance(a, CliBox) and isinstance(a.value, (int, float)):
+            if not isinstance(b, CliBox) or a.type != b.type: self.fail('System.ArgumentException', 'Objects must have compatible comparison types.')
+            return self.semantic_compare(a.value, b.value, a.type)
         method = self.contract_slot(type_name, 'System.IComparable`1', 'CompareTo')
         if method:
             receiver = self.cell_ref([self.copy_value(a)], 0, type_name) if self.meta['types'].get(type_name, {}).get('valueType') else a
             return self.call(method, [receiver, b], True, type_name)
-        method = self.contract_slot(type_name, 'System.IComparable', 'CompareTo')
+        method = self.contract_slot(self.actual_type(a, type_name), 'System.IComparable', 'CompareTo')
         if method: return self.call(method, [self.box(a, type_name), self.box(b, type_name)], True)
         self.fail('System.ArgumentException', 'At least one object must implement IComparable.')
 

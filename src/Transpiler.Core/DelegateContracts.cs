@@ -12,6 +12,7 @@ public static class DelegateContracts
             return int.TryParse(definition[14..], out var n) && n is >= 1 and <= 16 && args.Length == n;
         if (definition.StartsWith("System.Func`", StringComparison.Ordinal))
             return int.TryParse(definition[12..], out var n) && n is >= 1 and <= 17 && args.Length == n;
+        if (definition == "System.Converter`2") return args.Length == 2;
         return definition is "System.Predicate`1" or "System.Comparison`1" && args.Length == 1;
     }
 
@@ -25,9 +26,9 @@ public static class DelegateContracts
             {
                 if (image?.FindType(method.Type)?.BaseType == "System.MulticastDelegate") return "delegate.invoke";
                 var (type, args) = GenericSpecializer.Split(method.Type);
-                var parameters = type.StartsWith("System.Func`", StringComparison.Ordinal) ? args[..^1]
+                var parameters = (type.StartsWith("System.Func`", StringComparison.Ordinal) || type == "System.Converter`2") ? args[..^1]
                     : type == "System.Comparison`1" ? new[] { args[0], args[0] } : args;
-                var result = type.StartsWith("System.Func`", StringComparison.Ordinal) ? args[^1]
+                var result = (type.StartsWith("System.Func`", StringComparison.Ordinal) || type == "System.Converter`2") ? args[^1]
                     : type == "System.Predicate`1" ? "System.Boolean" : type == "System.Comparison`1" ? "System.Int32" : "System.Void";
                 if (method.Parameters.SequenceEqual(parameters) && method.ReturnType == result) return "delegate.invoke";
             }

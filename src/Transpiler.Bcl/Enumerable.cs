@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Transpiler.Bcl;
 
 /// <summary>Original portable LINQ subset. Iterator state machines are Roslyn-generated and compiled as ordinary CIL.</summary>
-public static class Enumerable
+public static partial class Enumerable
 {
     public static IEnumerable<int> Range(int start, int count)
     {
