@@ -15,7 +15,7 @@ public static class Program
         Console.WriteLine(1 << I(35)); Console.WriteLine(~n);
         try { Console.WriteLine(checked(a + b)); } catch (OverflowException) { Console.WriteLine("i4 overflow"); }
         try { Console.WriteLine(I(int.MinValue) / I(-1)); } catch (OverflowException) { Console.WriteLine("division overflow"); }
-        Console.WriteLine(I(int.MinValue) % I(-1));
+        try { Console.WriteLine(I(int.MinValue) % I(-1)); } catch (OverflowException) { Console.WriteLine("remainder overflow"); }
         try { Console.WriteLine(n / I(0)); } catch (DivideByZeroException) { Console.WriteLine("zero"); }
         uint u = U(uint.MaxValue);
         Console.WriteLine(u / 3); Console.WriteLine(u > U(2));

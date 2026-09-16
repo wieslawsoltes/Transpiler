@@ -140,9 +140,9 @@ class CliRuntime {
             case 'mul': value = a * b; break;
             case 'div': case 'rem':
                 if (b === 0n) this.fail('System.DivideByZeroException', 'Attempted to divide by zero.');
+                // Explicit CoreCLR x64 profile policy, including the documented rem edge case.
                 if (!unsigned && a === -(1n << BigInt(width - 1)) && b === -1n) {
-                    if (operation === 'div') this.fail('System.OverflowException', 'Arithmetic operation resulted in an overflow.');
-                    return kind === 'i8' ? 0n : 0;
+                    this.fail('System.OverflowException', 'Arithmetic operation resulted in an overflow.');
                 }
                 value = operation === 'div' ? a / b : a % b; break;
             case 'and': value = a & b; break;
@@ -348,6 +348,7 @@ class CliRuntime {
         if (type === 'System.Boolean') return value ? 'True' : 'False';
         if (type === 'System.Char') return String.fromCharCode(Number(value) & 65535);
         if (type === 'System.Double') return this.double_text(value);
+        if (value instanceof CliArray) return value.element + '[]';
         if (value instanceof CliObject) return value.type;
         return String(this.coerce(value, type));
     }
@@ -378,6 +379,8 @@ class CliRuntime {
             }
             const count = args.length === 2 ? length - start : args[2];
             if (start < 0 || count < 0 || start > length - count) this.fail('System.ArgumentOutOfRangeException', 'Substring range is out of bounds.');
+            if (start === 0 && count === length) return args[0];
+            if (count === 0) return this.string('', true);
             return this.string(text.slice(start, start + count));
         }
         if (op === 'exception.ctor') {

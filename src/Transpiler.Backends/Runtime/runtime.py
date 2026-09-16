@@ -5,7 +5,8 @@ import sys
 
 class CliString:
     __slots__ = ('text',)
-    def __init__(self, text): self.text = text
+    def __init__(self, text):
+        self.text = text.encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
 
 
 class CliObject:
@@ -35,7 +36,7 @@ class CliError(Exception):
 
 
 class CliFlow:
-    """Per-frame exception search and finally/fault continuation stack. Filters are rejected upstream."""
+    """Per-frame exception search and finally/fault continuations. Filters are rejected upstream."""
     def __init__(self, runtime, clauses):
         self.runtime, self.clauses = runtime, clauses
         self.pending, self.caught, self.escaping = [], [], None
@@ -69,7 +70,7 @@ class CliFlow:
         candidates.sort(key=lambda c: c['tryEnd'] - c['tryStart'])
         catcher = candidates[0] if candidates else None
         target = catcher['handlerStart'] if catcher else None
-        # An exception caught inside a currently executing finally does not cancel its earlier continuation.
+        # A locally caught exception inside a finally preserves the earlier unwind continuation.
         self.pending[:] = [p for p in self.pending if target is not None and
                            p['active']['handlerStart'] <= target < p['active']['handlerEnd']]
         handlers = [c for c in self.clauses if c['kind'] in ('Finally', 'Fault') and
@@ -115,6 +116,7 @@ class CliRuntime:
 
     def string(self, text, intern=False):
         if isinstance(text, CliString): return text
+        text = text.encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
         if intern:
             if text not in self.interned: self.interned[text] = CliString(text)
             return self.interned[text]
@@ -185,9 +187,9 @@ class CliRuntime:
         elif operation == 'mul': value = a * b
         elif operation in ('div', 'rem'):
             if b == 0: self.fail('System.DivideByZeroException', 'Attempted to divide by zero.')
+            # portable-mvp selects CoreCLR x64's documented overflow behavior for rem as well as div.
             if not unsigned and a == -(1 << (width - 1)) and b == -1:
-                if operation == 'div': self.fail('System.OverflowException', 'Arithmetic operation resulted in an overflow.')
-                return 0
+                self.fail('System.OverflowException', 'Arithmetic operation resulted in an overflow.')
             q = (abs(a) // abs(b)) * (-1 if (a < 0) != (b < 0) else 1)
             value = q if operation == 'div' else a - q * b
         elif operation == 'and': value = a & b
@@ -253,7 +255,6 @@ class CliRuntime:
             if not target.endswith('[]'): return False
             want = target[:-2]
             if value.element == want: return True
-            # CLI array covariance applies only to reference elements.
             if self.default(value.element) is not None or self.default(want) is not None: return False
             return self.assignable(value.element, want)
         return isinstance(value, CliObject) and self.assignable(value.type, target)
@@ -287,7 +288,7 @@ class CliRuntime:
     def store_ref(self, reference, value, type_name): self.nonnull(reference).set(self.coerce(value, type_name))
 
     def array(self, type_name, length):
-        if length < 0: self.fail('System.OverflowException', 'Array dimensions exceeded supported range.')
+        if length < 0 or length > 2147483647: self.fail('System.OverflowException', 'Array dimensions exceeded supported range.')
         try: return CliArray(type_name, [self.default(type_name) for _ in range(length)])
         except (MemoryError, OverflowError): self.fail('System.OutOfMemoryException', 'Insufficient memory.')
 
@@ -297,7 +298,9 @@ class CliRuntime:
         return index
 
     def array_length(self, array): return len(self.nonnull(array).data)
-    def array_get(self, array, index, type_name): return self.coerce(array.data[self._index(array, index)], type_name)
+    def array_get(self, array, index, type_name):
+        self._index(array, index)
+        return self.coerce(array.data[index], type_name)
     def array_set(self, array, index, value, type_name):
         self._index(array, index)
         if self.default(array.element) is None and value is not None and not self.is_type(value, array.element):
@@ -408,6 +411,7 @@ class CliRuntime:
         if type_name == 'System.Boolean': return 'True' if value else 'False'
         if type_name == 'System.Char': return chr(int(value) & 65535)
         if type_name == 'System.Double': return self.double_text(value)
+        if isinstance(value, CliArray): return value.element + '[]'
         if isinstance(value, CliObject): return value.type
         return str(self.coerce(value, type_name))
 
@@ -436,6 +440,8 @@ class CliRuntime:
                 return int.from_bytes(text[start * 2:start * 2 + 2], 'little')
             count = length - start if len(args) == 2 else args[2]
             if start < 0 or count < 0 or start > length - count: self.fail('System.ArgumentOutOfRangeException', 'Substring range is out of bounds.')
+            if start == 0 and count == length: return args[0]
+            if count == 0: return self.string('', intern=True)
             return self.string(text[start * 2:(start + count) * 2].decode('utf-16-le', 'surrogatepass'))
         if op == 'exception.ctor':
             args[0].fields['$message'] = self.format(args[1]) if len(args) > 1 and args[1] is not None else "Exception of type '" + args[0].type + "' was thrown."
