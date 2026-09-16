@@ -33,6 +33,7 @@ def cli(*args: object, expected: int | None = 0) -> subprocess.CompletedProcess:
 
 
 def record(name: str, action) -> None:
+    if os.environ.get('TRANSPILER_TEST_FILTER') and os.environ['TRANSPILER_TEST_FILTER'] not in name: return
     start = time.perf_counter()
     try:
         detail = action() or {}
@@ -43,7 +44,7 @@ def record(name: str, action) -> None:
         print('FAIL', name, str(error), flush=True)
 
 
-def differential(source: Path, debug: bool) -> dict:
+def differential(source: Path, debug: bool, bcl: bool = False) -> dict:
     directory = OUT / (source.stem + ('-debug' if debug else '-release'))
     directory.mkdir(parents=True, exist_ok=True)
     pe = directory / (source.stem + '.dll')
@@ -55,12 +56,12 @@ def differential(source: Path, debug: bool) -> dict:
     executions = []
     for target, extension, runtime in [('js', '.mjs', 'node'), ('py', '.py', sys.executable)]:
         output = directory / ('program' + extension)
-        cli('compile', pe, '--target', target, '--out', output, '--ir', directory / 'analysis.json')
+        cli('compile', pe, '--target', target, '--out', output, '--ir', directory / 'analysis.json', *(['--bcl', 'portable'] if bcl else []))
         actual = run(runtime, output, *args, expected=None)
         if (actual.returncode, actual.stdout) != (oracle.returncode, oracle.stdout):
             raise AssertionError(f'{target} differs from .NET\nexpected exit={oracle.returncode}, stdout={oracle.stdout!r}\nactual exit={actual.returncode}, stdout={actual.stdout!r}\nstderr={actual.stderr}')
         duplicate = directory / ('repeat' + extension)
-        cli('compile', pe, '--target', target, '--out', duplicate)
+        cli('compile', pe, '--target', target, '--out', duplicate, *(['--bcl', 'portable'] if bcl else []))
         if duplicate.read_bytes() != output.read_bytes(): raise AssertionError(target + ' emission is not deterministic')
         executions.append(dict(target=target, bytes=output.stat().st_size, sha256=hashlib.sha256(output.read_bytes()).hexdigest()))
     return dict(exitCode=oracle.returncode, stdout=oracle.stdout, executions=executions)
@@ -113,10 +114,15 @@ def main() -> int:
     for source in sorted((ROOT / 'tests/programs').glob('*.cs')) + [ROOT / 'samples/Hello.cs']:
         for debug in (False, True):
             record(source.stem + ('/debug' if debug else '/release'), lambda source=source, debug=debug: differential(source, debug))
+    for source in sorted((ROOT / 'tests/bcl').glob('*.cs')):
+        for debug in (False, True):
+            record('bcl/' + source.stem + ('/debug' if debug else '/release'), lambda source=source, debug=debug: differential(source, debug, True))
     for source in sorted((ROOT / 'tests/negative').glob('*.cs')):
         record('reject/' + source.stem, lambda source=source: negative(source))
     record('library/host-interop', library)
     record('metadata/malformed-pe', malformed)
+    import extended
+    extended.register(sys.modules[__name__])
     cli('capabilities', '--out', OUT / 'capabilities.json')
     report = dict(schema=1, platform=platform.platform(), python=platform.python_version(),
                   node=run('node', '--version').stdout.strip(), dotnet=run('dotnet', '--version').stdout.strip(),
