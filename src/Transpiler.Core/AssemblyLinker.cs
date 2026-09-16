@@ -16,7 +16,7 @@ public static class AssemblyLinker
         var graph = new Dictionary<string, AssemblyModel>(StringComparer.Ordinal);
         foreach (var module in supplied)
         {
-            if (module.IsReferenceAssembly) Fail("TR3001", $"'{module.Identity}' is a reference assembly, not executable implementation IL.");
+            if (module.IsReferenceAssembly && !module.ContractsOnly) Fail("TR3001", $"'{module.Identity}' is a reference assembly, not executable implementation IL.");
             if (graph.TryGetValue(module.Name, out var existing))
             {
                 if (existing.Identity != module.Identity || !existing.Inputs.SequenceEqual(module.Inputs))

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="../Transpiler.Core/Transpiler.Core.csproj" />
+    <ProjectReference Include="../Transpiler.Bcl/Transpiler.Bcl.csproj" />
     <!-- Use the compiler shipped in the selected SDK: no floating NuGet restore. -->
     <Reference Include="Microsoft.CodeAnalysis">
       <HintPath>$(MSBuildSDKsPath)/../Roslyn/bincore/Microsoft.CodeAnalysis.dll</HintPath>

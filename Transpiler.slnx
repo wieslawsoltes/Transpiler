@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Transpiler.Bcl/Transpiler.Bcl.csproj" />
     <Project Path="src/Transpiler.Core/Transpiler.Core.csproj" />
     <Project Path="src/Transpiler.Frontend.Roslyn/Transpiler.Frontend.Roslyn.csproj" />
     <Project Path="src/Transpiler.Backends/Transpiler.Backends.csproj" />
