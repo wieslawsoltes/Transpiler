@@ -3,5 +3,7 @@
     <ProjectReference Include="../Transpiler.Core/Transpiler.Core.csproj" />
     <EmbeddedResource Include="Runtime/runtime.mjs" LogicalName="Transpiler.Runtime.JavaScript" />
     <EmbeddedResource Include="Runtime/runtime.py" LogicalName="Transpiler.Runtime.Python" />
+    <EmbeddedResource Include="Runtime/managed.mjs" LogicalName="Transpiler.Runtime.JavaScript.Managed" />
+    <EmbeddedResource Include="Runtime/managed.py" LogicalName="Transpiler.Runtime.Python.Managed" />
   </ItemGroup>
 </Project>

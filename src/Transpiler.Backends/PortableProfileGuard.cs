@@ -40,6 +40,8 @@ internal static class PortableProfileGuard
         }
         foreach (var type in active)
         {
+            foreach (var obligation in image.FindType(type)?.RuntimeObligations ?? [])
+                errors.Add(new(obligation == "Finalize" ? "TR2211" : "TR2210", $"'{type}' requires the unsupported external runtime slot '{obligation}'."));
             if (UnsafeName(type) || type is "__proto__" or "constructor" or "prototype")
                 errors.Add(new("TR2213", $"Metadata name '{type}' is outside the portable source-emission profile."));
             // Implicit calls through the BCL (Console.WriteLine(object), finalization, etc.) can invoke an

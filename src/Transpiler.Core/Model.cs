@@ -37,11 +37,15 @@ public sealed record ExceptionClause(string Kind, int TryStart, int TryEnd, int 
 public sealed record TypeDefinitionModel(string Name, string? BaseType, bool IsInterface, bool IsValueType,
     bool BeforeFieldInit, int GenericArity, string[] Interfaces)
 {
+    public int[] GenericVariance { get; init; } = [];
     public MethodOverride[] Overrides { get; init; } = [];
     public string? EnumUnderlyingType { get; init; }
+    public bool EnumFlags { get; init; }
+    public EnumValue[] EnumValues { get; init; } = [];
     public bool ExplicitLayout { get; init; }
     public string[] RuntimeObligations { get; init; } = [];
 }
+public sealed record EnumValue(string Name, string Value);
 public sealed record MethodOverride(MethodReference Body, MethodReference Declaration);
 public sealed record AssemblyIdentity(string Name, string Version, string Culture, string PublicKeyToken)
 {
@@ -67,7 +71,9 @@ public sealed record AssemblyModel(string Name, int EntryPoint, TypeDefinitionMo
     public AssemblyInput[] Inputs { get; init; } = [];
     public string RootAssembly { get; init; } = Name;
     public bool IsReferenceAssembly { get; init; }
+    public bool ContractsOnly { get; init; }
     public string[] ExportRoots { get; init; } = [];
+    public string[] HostRoots { get; init; } = [];
     public MethodDefinitionModel? Resolve(MethodReference method) => Methods.FirstOrDefault(m =>
         m.Reference.Assembly == method.Assembly && m.Key == method.Key && m.Reference.ReturnType == method.ReturnType);
     public FieldDefinitionModel? Resolve(FieldReference field) => Fields.FirstOrDefault(f =>

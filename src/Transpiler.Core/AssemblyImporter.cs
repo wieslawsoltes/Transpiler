@@ -10,7 +10,7 @@ namespace Transpiler.Core;
 /// <summary>Imports CLI metadata and CIL without loading the input into the compiler's CLR.</summary>
 public static class AssemblyImporter
 {
-    public static AssemblyModel Read(byte[] image)
+    public static AssemblyModel Read(byte[] image, Func<string, bool>? includeType = null, Func<MethodReference, bool>? includeMethod = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         try
@@ -19,7 +19,12 @@ public static class AssemblyImporter
             using var pe = new PEReader(stream);
             if (!pe.HasMetadata || pe.PEHeaders.CorHeader is not { } cor)
                 throw new BadImageFormatException("A managed PE/CLI assembly is required.");
-            if ((cor.Flags & CorFlags.ILOnly) == 0 || (cor.Flags & CorFlags.NativeEntryPoint) != 0)
+            // Selected managed bodies may be imported from a ReadyToRun implementation image.
+            // Native code is never executed; unrestricted mixed-mode input remains rejected.
+            var selectedReadyToRun = includeType is not null && includeMethod is not null &&
+                cor.ManagedNativeHeaderDirectory.Size >= 4 &&
+                pe.GetSectionData(cor.ManagedNativeHeaderDirectory.RelativeVirtualAddress).GetReader().ReadUInt32() == 0x00525452;
+            if (((cor.Flags & CorFlags.ILOnly) == 0 && !selectedReadyToRun) || (cor.Flags & CorFlags.NativeEntryPoint) != 0)
                 throw new CompilationException(new Diagnostic("TR1002", "Mixed-mode/native-entry assemblies are not supported by the portable profile."));
             var reader = pe.GetMetadataReader();
             if (!reader.IsAssembly) throw new BadImageFormatException("Standalone netmodules are not supported.");
@@ -79,6 +84,20 @@ public static class AssemblyImporter
                 OperandType.InlineType => provider.TypeName(MetadataTokens.EntityHandle(token)),
                 _ => token
             };
+            string EnumConstant(FieldDefinition field)
+            {
+                var constant = reader.GetConstant(field.GetDefaultValue());
+                var blob = reader.GetBlobReader(constant.Value);
+                object value = constant.TypeCode switch
+                {
+                    ConstantTypeCode.SByte => blob.ReadSByte(), ConstantTypeCode.Byte => blob.ReadByte(),
+                    ConstantTypeCode.Int16 => blob.ReadInt16(), ConstantTypeCode.UInt16 => blob.ReadUInt16(),
+                    ConstantTypeCode.Int32 => blob.ReadInt32(), ConstantTypeCode.UInt32 => blob.ReadUInt32(),
+                    ConstantTypeCode.Int64 => blob.ReadInt64(), ConstantTypeCode.UInt64 => blob.ReadUInt64(),
+                    _ => throw new BadImageFormatException("Invalid enum constant encoding.")
+                };
+                return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!;
+            }
             var types = new List<TypeDefinitionModel>();
             var methods = new List<MethodDefinitionModel>();
             var fields = new List<FieldDefinitionModel>();
@@ -86,16 +105,23 @@ public static class AssemblyImporter
             {
                 var type = reader.GetTypeDefinition(handle);
                 var typeName = provider.TypeName(handle);
+                if (includeType is not null && !includeType(typeName)) continue;
                 var baseName = type.BaseType.IsNil ? null : provider.TypeName(type.BaseType);
                 types.Add(new(typeName, baseName, (type.Attributes & TypeAttributes.Interface) != 0,
                     baseName is "System.ValueType" or "System.Enum", (type.Attributes & TypeAttributes.BeforeFieldInit) != 0,
                     type.GetGenericParameters().Count, type.GetInterfaceImplementations().Select(i =>
                         provider.TypeName(reader.GetInterfaceImplementation(i).Interface)).ToArray())
                 {
+                    GenericVariance = type.GetGenericParameters().Select(h => (int)(reader.GetGenericParameter(h).Attributes & GenericParameterAttributes.VarianceMask)).ToArray(),
                     Overrides = type.GetMethodImplementations().Select(h => reader.GetMethodImplementation(h))
                         .Select(m => new MethodOverride(Method(m.MethodBody), Method(m.MethodDeclaration))).ToArray(),
                     EnumUnderlyingType = baseName == "System.Enum" ? type.GetFields().Select(h => Field(h))
                         .First(f => f.Name == "value__").FieldType : null,
+                    EnumFlags = baseName == "System.Enum" && type.GetCustomAttributes().Select(h => reader.GetCustomAttribute(h)).Any(a =>
+                        a.Constructor.Kind is HandleKind.MemberReference or HandleKind.MethodDefinition && Method(a.Constructor).Type == "System.FlagsAttribute"),
+                    EnumValues = baseName == "System.Enum" ? type.GetFields().Select(h => reader.GetFieldDefinition(h))
+                        .Where(f => (f.Attributes & FieldAttributes.Literal) != 0)
+                        .Select(f => new EnumValue(reader.GetString(f.Name), EnumConstant(f))).ToArray() : [],
                     RuntimeObligations = type.GetMethods().Select(h => reader.GetMethodDefinition(h))
                         .Where(m => (m.Attributes & MethodAttributes.Virtual) != 0 && (m.Attributes & MethodAttributes.NewSlot) == 0)
                         .Select(m => reader.GetString(m.Name)).Where(n => n is "ToString" or "GetHashCode" or "Equals" or "Finalize").ToArray(),
@@ -111,6 +137,7 @@ public static class AssemblyImporter
                 {
                     var definition = reader.GetMethodDefinition(m);
                     var reference = Method(m);
+                    if (includeMethod is not null && !includeMethod(reference)) continue;
                     if (definition.DecodeSignature(provider, null).Header.CallingConvention == SignatureCallingConvention.VarArgs)
                         throw new CompilationException(new Diagnostic("TR1011", "Vararg calling conventions are outside portable-mvp.", reference.Key));
                     var body = definition.RelativeVirtualAddress == 0 ? null : pe.GetMethodBody(definition.RelativeVirtualAddress);
