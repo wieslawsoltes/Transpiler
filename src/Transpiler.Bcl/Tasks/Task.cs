@@ -22,7 +22,9 @@ public class Task
     public bool IsCompletedSuccessfully => _state == 1;
     public bool IsFaulted => _state == 2;
     public bool IsCanceled => _state == 3;
-    public static Task CompletedTask => FromResult(0);
+    private static readonly Task Completed = CreateCompleted();
+    private static Task CreateCompleted() { var task = new Task(); task.Finish(1, null); return task; }
+    public static Task CompletedTask => Completed;
     public static Task<T> FromResult<T>(T value)
     { var task = new Task<T>(); task.Complete(value); return task; }
     public static Task FromException(Exception error)
@@ -47,8 +49,10 @@ public class Task
     internal bool Fail(Exception error)
     {
         if (error == null) throw new ArgumentNullException(nameof(error));
-        return Finish(error is OperationCanceledException ? 3 : 2, error);
+        return Finish(2, error);
     }
+    internal void SetAsyncException(Exception error)
+    { if (error == null) throw new ArgumentNullException(nameof(error)); Finish(error is OperationCanceledException ? 3 : 2, error); }
     internal void GetCompletion()
     {
         int budget = 100000;

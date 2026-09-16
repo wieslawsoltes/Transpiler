@@ -10,6 +10,8 @@ public static class IntrinsicCatalog
     private static readonly IReadOnlyDictionary<string, string> Entries = Build();
     public static string? Find(MethodReference method, AssemblyModel? image = null)
     {
+        var service = RuntimeContracts.Find(method);
+        if (service is not null) return service;
         var delegateIntrinsic = DelegateContracts.Find(method, image);
         if (delegateIntrinsic is not null && (AssemblyLinker.IsFramework(method.Assembly) || image?.FindType(method.Type)?.BaseType == "System.MulticastDelegate")) return delegateIntrinsic;
         if (method.Assembly is not ("System.Runtime" or "System.Console" or "System.Private.CoreLib" or "mscorlib" or "netstandard")) return null;

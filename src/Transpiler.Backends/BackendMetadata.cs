@@ -106,13 +106,13 @@ internal sealed class BackendMetadata
             m.Reference.Type.StartsWith("[Transpiler.Bcl]Transpiler.Bcl.ArrayEnumerator`1<", StringComparison.Ordinal))
             .ToDictionary(m => m.Reference.Parameters.Single(), m => Id(m.Token), StringComparer.Ordinal);
         var asyncBindings = new SortedDictionary<string, object>(StringComparer.Ordinal);
-        const string tasks = "[Transpiler.Bcl]Transpiler.Bcl.Tasks.";
+        const string tasks = "System.Threading.Tasks.";
         foreach (var method in linked.Values.Where(m => m.Reference.Name == "GetAwaiter" &&
             (m.Reference.Type == tasks + "Task" || m.Reference.Type.StartsWith(tasks + "Task`1<", StringComparison.Ordinal))))
         {
             var result = linked.Values.FirstOrDefault(m => m.Reference.Type == method.Reference.ReturnType && m.Reference.Name == "GetResult");
             var completed = linked.Values.FirstOrDefault(m => m.Reference.Type == tasks + "Task" && m.Reference.Name == "get_IsCompleted");
-            var pump = linked.Values.FirstOrDefault(m => m.Reference.Type == tasks + "Scheduler" && m.Reference.Name == "RunOne");
+            var pump = linked.Values.FirstOrDefault(m => m.Reference.Type == "[Transpiler.Bcl]Transpiler.Bcl.Tasks.Scheduler" && m.Reference.Name == "RunOne");
             if (result is not null && completed is not null && pump is not null)
                 asyncBindings[method.Reference.Type] = new { getAwaiter = Id(method.Token), getResult = Id(result.Token),
                     completed = Id(completed.Token), pump = Id(pump.Token), awaiterType = method.Reference.ReturnType, resultType = result.Reference.ReturnType };

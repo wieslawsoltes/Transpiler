@@ -151,7 +151,7 @@ public static partial class CompilerAnalysis
         if (depth > 64) return false;
         if (type.EndsWith('&')) return !type[..^1].EndsWith('&') && SupportedType(image, type[..^1], depth + 1);
         if (type.EndsWith("[]", StringComparison.Ordinal)) return SupportedType(image, type[..^2], depth + 1);
-        if (DelegateContracts.IsDelegate(type, image)) return true;
+        if (DelegateContracts.IsDelegate(type, image) || RuntimeContracts.IsWeakReference(type)) return true;
         if (type is "System.Delegate" or "System.MulticastDelegate" or "System.IntPtr") return true;
         if (CliTypes.IsPrimitive(type) || type is "System.String" or "System.Object" or "System.ValueType" or "System.Enum" || IntrinsicCatalog.ExceptionTypes.Contains(type)) return true;
         var t = image.FindType(type);

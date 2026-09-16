@@ -248,5 +248,5 @@ class CliFunction:
 
 
 class CliDelegate:
-    __slots__ = ('type', 'invocations')
+    __slots__ = ('type', 'invocations', '__weakref__')
     def __init__(self, type_name, invocations): self.type, self.invocations = type_name, tuple(invocations)

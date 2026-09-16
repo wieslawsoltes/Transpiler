@@ -4,23 +4,23 @@ import sys
 
 
 class CliString:
-    __slots__ = ('text',)
+    __slots__ = ('text', '__weakref__')
     def __init__(self, text):
         self.text = text.encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
 
 
 class CliObject:
-    __slots__ = ('type', 'fields')
+    __slots__ = ('type', 'fields', '__weakref__')
     def __init__(self, type_name): self.type, self.fields = type_name, {}
 
 
 class CliArray:
-    __slots__ = ('element', 'data')
+    __slots__ = ('element', 'data', '__weakref__')
     def __init__(self, element, data): self.element, self.data = element, data
 
 
 class CliBox:
-    __slots__ = ('type', 'value')
+    __slots__ = ('type', 'value', '__weakref__')
     def __init__(self, type_name, value): self.type, self.value = type_name, value
 
 

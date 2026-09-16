@@ -14,7 +14,7 @@ public struct AsyncTaskMethodBuilder
     public static AsyncTaskMethodBuilder Create() => new AsyncTaskMethodBuilder { _task = new Task() };
     public Task Task => _task;
     public void SetResult() => _task.Finish(1, null);
-    public void SetException(Exception error) => _task.Fail(error);
+    public void SetException(Exception error) => _task.SetAsyncException(error);
     public void SetStateMachine(IAsyncStateMachine stateMachine)
     { if (stateMachine == null) throw new ArgumentNullException(nameof(stateMachine)); }
     public void Start<T>(ref T stateMachine) where T : IAsyncStateMachine => stateMachine.MoveNext();
@@ -29,7 +29,7 @@ public struct AsyncTaskMethodBuilder<R>
     public static AsyncTaskMethodBuilder<R> Create() => new AsyncTaskMethodBuilder<R> { _task = new Task<R>() };
     public Task<R> Task => _task;
     public void SetResult(R result) => _task.Complete(result);
-    public void SetException(Exception error) => _task.Fail(error);
+    public void SetException(Exception error) => _task.SetAsyncException(error);
     public void SetStateMachine(IAsyncStateMachine stateMachine)
     { if (stateMachine == null) throw new ArgumentNullException(nameof(stateMachine)); }
     public void Start<T>(ref T stateMachine) where T : IAsyncStateMachine => stateMachine.MoveNext();
