@@ -8,6 +8,14 @@ public static class LibrarySubstitution
     public const string Policy = "portable-bcl-v1";
     public static IReadOnlyDictionary<string, string> Types { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ValueTask"] = "System.Threading.Tasks.ValueTask",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ValueTask`1"] = "System.Threading.Tasks.ValueTask`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ValueTaskAwaiter"] = "System.Runtime.CompilerServices.ValueTaskAwaiter",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ValueTaskAwaiter`1"] = "System.Runtime.CompilerServices.ValueTaskAwaiter`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ConfiguredValueTaskAwaitable"] = "System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ConfiguredValueTaskAwaitable`1"] = "System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.AsyncValueTaskMethodBuilder"] = "System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.AsyncValueTaskMethodBuilder`1"] = "System.Runtime.CompilerServices.AsyncValueTaskMethodBuilder`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.AggregateException"] = "System.AggregateException",
         ["[Transpiler.Bcl]Transpiler.Bcl.ReadOnlyCollection`1"] = "System.Collections.ObjectModel.ReadOnlyCollection`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.KeyNotFoundException"] = "System.Collections.Generic.KeyNotFoundException",
