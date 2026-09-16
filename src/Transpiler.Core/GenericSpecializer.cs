@@ -241,7 +241,7 @@ public static partial class GenericSpecializer
                 if (template.Overrides.Length != 0 && type.Overrides.Length == 0)
                     types[type.Name] = type with { Overrides = template.Overrides.Select(o => new MethodOverride(
                         Bind(o.Body with { Type = T(o.Body.Type), Parameters = o.Body.Parameters.Select(T).ToArray(), ReturnType = T(o.Body.ReturnType) }),
-                        Bind(o.Declaration with { Type = T(o.Declaration.Type), Parameters = o.Declaration.Parameters.Select(T).ToArray(), ReturnType = T(o.Declaration.ReturnType) }))).ToArray() };
+                        Bind(o.Declaration with { Type = T(o.Declaration.Type), GenericArguments = o.Declaration.GenericArguments.Select(T).ToArray() }))).ToArray() };
                 foreach (var map in types[type.Name].Overrides.Where(o => Split(o.Declaration.Type).Definition is "System.IEquatable`1" or "System.IComparable`1" or "System.IComparable"))
                     hostRoots.Add(map.Body.Key);
                 foreach (var call in virtualCalls.Values.ToArray())
