@@ -1,0 +1,1 @@
+using System; public static class Program { static bool Filter(Exception e) => e.Message.Length > 0; public static void Main() { try { throw new Exception("x"); } catch (Exception e) when (Filter(e)) { Console.WriteLine("filter"); } } }

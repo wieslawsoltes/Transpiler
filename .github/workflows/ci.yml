@@ -24,8 +24,7 @@ jobs:
       - name: Build
         run: dotnet build Transpiler.slnx -c Release
       - name: Differential conformance
-        run: |
-          if [ -f tests/conformance.py ]; then python tests/conformance.py; fi
+        run: python tests/conformance.py
       - name: Package source snapshot
         if: always()
         run: |

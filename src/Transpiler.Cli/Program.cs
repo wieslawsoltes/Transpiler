@@ -136,7 +136,7 @@ internal static class Program
                 case "--library": options.Library = true; break;
                 case "--debug": options.Debug = true; break;
                 default:
-                    if (args[i].StartsWith('-', StringComparison.Ordinal)) throw new ArgumentException("Unknown option: " + args[i]);
+                    if (args[i].StartsWith("-", StringComparison.Ordinal)) throw new ArgumentException("Unknown option: " + args[i]);
                     options.Inputs.Add(args[i]); break;
             }
         }

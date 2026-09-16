@@ -1,0 +1,1 @@
+using System; public interface I { int Get(); } public class C : I { public int Get() => 42; } public static class Program { public static void Main() { I value = new C(); Console.WriteLine(value.Get()); } }
