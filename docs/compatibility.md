@@ -1,62 +1,41 @@
-# Compatibility ledger
+# Current compatibility ledger
 
-Profile: `portable-mvp`. Both current backends use the same capability analysis and source-lowering decisions. **Implemented** means the code path exists; **tested** refers to the named corpus, not exhaustive CLI certification. Run `capabilities` to enumerate the current 138 normalized opcode names and 87 exact intrinsic signatures. These counts include normalization/conversion variants and must not be presented as a percentage of complete .NET support.
+Updated 2026-09-16. JavaScript and Python share analysis and lowering. A supported slice means the named implementation paths and corpus pass, not exhaustive ECMA/.NET certification. Metadata schema 2; profile portable-mvp; optional portable-bcl-v1.
 
-| Area | Current behavior | Evidence / boundary |
+| Area | Implemented/tested slice | Remaining boundary |
 |---|---|---|
-| C# frontend | Roslyn C# 14 emits real PE/PDB | All source fixtures; compiler uses host reference assemblies |
-| Existing DLL input | PEReader/SRM import, no Assembly.Load | Every differential target compilation uses a pre-emitted DLL |
-| IL bytes / metadata | Operand decoding, signatures, locals, EH | Positive corpus and malformed PE test; not hostile-input certification |
-| Branches / switches / loops | Generated source dispatch with stack joins | ControlFlow, Hello, all Debug builds |
-| Recursion | Host call stack | Fibonacci fixture; deep recursion/StackOverflowException not equivalent |
-| Integer arithmetic | Explicit 32-/64-bit semantics; narrow storage | Integers, checked overflow, unsigned ops, division/remainder, shifts |
-| 64-bit JavaScript precision | BigInt | Values above 2^53 in Integers, References, library ABI |
-| Binary64 | Arithmetic, signed zero, NaN/unordered comparisons | FloatingPoint; exhaustive formatting/payload equivalence not claimed |
-| Binary32 / decimal / SIMD | Rejected or unavailable | Single rejection; remaining surfaces not implemented |
-| Native integers / pointers | Rejected | No portable pointer width or unsafe-memory profile yet |
-| Classes / constructors / fields | Identity, inheritance, typed storage | Objects, References |
-| Static initialization | Once/running/cached failure; deferred beforefieldinit | StaticInitialization; single-threaded only |
-| Virtual calls / newslot | Internal class slot dispatch | Objects; MethodImpl maps conservatively rejected |
-| External virtual overrides | Rejected when reachable type requires a bridge | ExternalVirtual; backend profile guard also checks implicit BCL invocation |
-| Finalizable objects | Rejected by emission guard | Finalizer; no managed GC/finalization services |
-| Interfaces | Calls/types rejected | Interface fixture; no explicit/default interface method support |
-| General structs / enums | Rejected | ValueType; no layout/copying ABI yet |
-| Primitive boxing / unboxing | Box identity, exact boxed type checks | Objects |
-| Managed references | Aliased args/locals/fields/arrays; byref returns | References; complete escape/type-safety verification not implemented |
-| SZ arrays | Null/bounds checks; typed storage; basic covariance | Arrays; nested covariance/interface surface not certified |
-| Constant-array RVA initialization | Rejected through unsupported helper/token path | ArrayRva; direct handcrafted RVA-backed storage not a supported input |
-| Rectangular / non-zero-bound arrays | Unsupported | Requires metadata/storage and BCL lowering |
-| Strings | Identity, literal intern, UTF-16 length/index/slice, registered concat/equality | Strings; paired-surrogate reconstruction tested |
-| String/number globalization | Limited invariant output only | No culture-aware BCL surface; isolated-surrogate streaming I/O not complete |
-| Throw / catch / leave / finally | Explicit managed exception and continuation protocol | Exceptions, Arrays, StaticInitialization |
-| Rethrow / replacement / nested finally catch | Implemented | Exceptions |
-| Fault clauses | Runtime path implemented | Needs hand-authored IL differential tests; not fully certified |
-| Exception filters | Rejected | Filter; full two-pass cross-frame search planned |
-| Exception messages / traces | Explicit messages preserved; diagnostic defaults are limited | No exact localized defaults or .NET stack trace guarantee |
-| Generic types / methods | Rejected | Generic; no reified/specialized instantiations yet |
-| Delegates / closures / events | Rejected through types/opcodes/library dependencies | Delegate |
-| Async / iterators / Tasks | Unsupported library/type closure | Requires value types, generics, interfaces and task/iterator runtime |
-| Reflection / typeof tokens | Rejected | Reflection |
-| Dynamic loading / Reflection.Emit | No implementation or hidden fallback | Planned separate opt-in dynamic profile |
-| P/Invoke / native / mixed mode | Rejected | Body/native checks; no host ABI adapter |
-| Volatile / atomics / threading | Unsupported | Prefix/modifier/host contracts not implemented |
-| Files / sockets / general BCL | Exact bindings only; unregistered calls fail | ExternalLibrary; not arbitrary .NET library compatibility |
-| Library host ABI | Public static exports; primitive/string/coerced-array inputs | library/host-interop; general object/byref/callback ABI unstable |
-| Cross-assembly linking | Not implemented | References bind C# but do not link external method bodies |
-| Deterministic target source | Byte-identical for same PE/toolchain | Re-emission check for every positive target program |
-| Source maps / source-level diagnostics | Not implemented | IL offsets available; portable PDB is emitted but not mapped |
-| JavaScript browser hosting | ES-module design supports explicit invocation/output callback | Initial conformance executes Node, not browsers |
-| Python deployment | Generated Python plus standard library | CI Python 3.13; no CLR/Python.NET dependency |
-| C++ | Planned | No C++ emitter in the MVP |
-| SSA / optimization | Planned | Current backend is a statically emitted control-flow dispatcher |
-| Security sandbox | Not provided | Compiler and generated programs require trusted inputs or OS isolation |
+| C# / PE input | Roslyn C# 14; real DLL import; Debug/Release | No general project/NuGet/source-generator driver |
+| Assembly graph | Explicit multi-assembly linkage; identity mismatch rejection; deterministic input order | General forwarding, multi-version/load-context resolution |
+| Framework binding | Selected reference-pack metadata, distinct implementation bodies | Full hermetic restore/lockfile pipeline |
+| Generics | Bounded closed method/type specialization and distinct statics | Dynamic/open instantiation; exhaustive constraints and sharing |
+| Structs / enums | Copy/address/storage/boxing paths; nested fields; tested formatting | Explicit layout, full nullable/span/ref-struct semantics |
+| Interfaces | Tested implicit/explicit MethodImpl, constrained calls, variance | All default-interface/GVM combinations |
+| Delegates / closures | Function/receiver identity, invocation, combination/removal/equality | Arbitrary unmanaged function pointers and complete delegate variance/interop |
+| Classes / virtual slots | Constructors, fields, statics, internal overrides/newslot | Implicit external virtual-slot bridges; finalizers |
+| Local initialization | Stack checks plus must-assignment proof when InitLocals is false | First initialization through addresses; exceptional-flow proof |
+| Numerics | Fixed-width integers, checked conversion, exact 64-bit values, binary64 | Binary32 storage, decimal, SIMD, all formatting cases |
+| Arrays | Checked SZ vectors, tested covariance and managed enumeration bridge | Rectangular/lower-bound arrays and field-RVA initializers |
+| Strings | Identity/interning and selected UTF-16 operations | Full globalization/formatting and isolated-surrogate console streaming |
+| Exceptions | Catch/throw/rethrow/leave/finally and pending-handler behavior | Two-pass filters; exact traces/default messages; full fault fixtures |
+| Original CoreLib | 21 integer Math methods in UpstreamBclCatalog | Not the complete Math class or arbitrary CoreLib |
+| Portable List<T> | Construction, Add/AddRange, index/Count/Capacity, Insert/RemoveAt/RemoveAll/Clear, ToArray, ForEach, enumeration | Sort, full comparer/equality API, all collection interfaces/overloads |
+| Portable Queue<T>/Stack<T> | Selected storage, mutation, Try operations, enumeration/materialization | Full public interface/overload parity |
+| Portable Enumerable | Selected Range/Repeat, Where/Select, Take/Skip, Count/Any/All/First, Aggregate/Sum, ToArray/ToList | Full LINQ, IQueryable, async LINQ and every overload |
+| Iterators | Real Roslyn iterator bodies, repeated enumeration and early disposal | Every iterator/language/runtime edge case |
+| Async | Task/Task<T>, builders, awaiters, Yield, selected completion-source paths, host adapters | Thread pool, Delay/Run, contexts, tokens, ValueTask, async streams |
+| Host lifetime | WeakReference<T>, identity hash, KeepAlive, explicit roots | Forced collection, finalization/resurrection, pinning, CLR heap APIs |
+| Logical GC library | Translated C# bounded mark/sweep; roots, weak clearing, cycles, stale-address/quota checks | Not the default collector; no implicit local roots, finalizers, compaction or concurrency |
+| Reflection / dynamic | Explicit rejection; no hidden fallback | Metadata reflection, dynamic loading, expression compilation |
+| I/O / native / threads | Selected console and single-thread services only | File/network/GUI/native ABI and memory-model adapters |
+| Host ABI | Primitive/string and selected array input; async results; root handles | General callbacks/byref/object transport across modules/processes |
+| Source generation | Deterministic static method dispatch | SSA optimizations, source maps, structured source recovery |
+| Browser / C++ | Browser ES-module design; C++ design profiles only | Browser qualification and actual C++ emitters |
+| Security | Input import without assembly execution; bounded selected graph structures | Full verifier, hostile-input audit, quotas and sandbox |
 
-## What a positive result proves
+## Evidence dimensions
 
-For each accepted fixture, the same managed assembly executes under CoreCLR and is compiled to both target sources. The harness compares stdout and process exit code, not just successful parsing. It separately checks reproducible emission. This is stronger than a syntax-only smoke test, but does not observe every internal runtime detail.
+The configured gate has **71 harness cases**: 52 normal/BCL Release/Debug console configurations, eight negative fixtures, ordinary library ABI, malformed PE, and nine extended checks. Logical-heap Release/Debug cases add four translated console executions beyond the 104 ordinary/BCL console executions. Other ABI and graph cases perform additional target runs.
 
-For unsupported fixtures, both target compilers must fail with structured Transpiler diagnostics and must not create a new target file. The external-override and finalizer cases protect against semantics invoked implicitly rather than by an obvious direct call.
+Every positive console configuration compares stdout and exit status to the same DLL executed by CoreCLR and checks repeated emission. The original-body gate asserts all 21 selected CoreLib algorithms remain emitted IL-derived methods, not hidden Math intrinsics. The assignment gate checks 11 hand-authored control-flow shapes. Logical collection also checks an independent graph oracle, not just agreement among three executions of the same algorithm.
 
-## What remains intentionally visible
-
-No full-CLI compatibility percentage is published. Opcode coverage, valid operand combinations, metadata coverage, runtime behavior, BCL signatures, host capabilities, and performance are separate dimensions. An unsupported low-level construct must not become “supported” just because a high-level C# example happened not to exercise the missing behavior.
+The capabilities command enumerates normalized opcode names and registered fixed intrinsic signatures. Pattern-based generic/runtime bindings and valid operand combinations are separate dimensions. No percentage of full CLI or BCL support is claimed. Consult [validation](validation-summary.md) for observed results rather than inferring success from configured counts.
