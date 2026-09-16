@@ -1,156 +1,130 @@
-# Transpiler MVP specification
+# Specification — portable compiler and managed BCL batch
 
-Version: **0.1 / portable-mvp**, 2026-09-16. Metadata schema: 1. This document describes the implementation and its declared boundaries, not complete ECMA-335 conformance.
+Updated 2026-09-16. Artifact metadata schema: **2**. Existing profile identifier: **`portable-mvp`**. Optional substitution policy: **`portable-bcl-v1`**. This document replaces the [0.1 contract](history/0.1/specification.md); it does not claim complete ECMA-335, BCL, scheduling or GC conformance.
 
-## 1. Product contract
+## 1. Inputs and outputs
 
-Input is one managed PE assembly, or one or more C# source files compiled to that assembly by Roslyn. Output is a standalone JavaScript ES module or Python module with bundled target-language semantic helpers. Existing managed assembly input bypasses Roslyn source compilation.
+The compiler accepts one root managed assembly or C# source files compiled into that root. `--reference` supplies explicit managed implementation dependencies and also serves source binding when compiling C#. A .NET 10 reference pack supplies framework source contracts. The compiler does not execute input module initializers or resolve dependencies over a network.
 
-The compiler must diagnose known unsupported reachable opcodes, types, and external calls before replacing the requested target output. It does not silently fall back to a CLR subprocess, Python.NET, WebAssembly, `eval`, or runtime IL decoding. The initial verifier is not complete enough to certify arbitrary hostile/unverifiable assemblies.
+Output is a self-contained `.mjs` or `.py` file with translated method bodies and semantic helpers. Execution requires the target host, not .NET. Python uses structural pattern matching; CI qualifies Python 3.13. JavaScript is tested on Node 22. Browser imports are a supported design direction, not a completed browser test matrix.
 
-The supported semantics are measured by the checked-in conformance corpus. A listed opcode is not a promise that every possible ECMA operand/type combination is implemented. The machine-readable capability command describes registered operations, while the compatibility matrix describes restrictions and test evidence.
-
-## 2. Toolchain and commands
-
-Build the compiler with a .NET 10 SDK. The repository selects C# 14 and uses the compiler assemblies supplied by the resolved SDK. Node 22 and Python 3.13 are the CI execution targets. Python output uses structural pattern matching and therefore requires Python 3.10 or later at the syntax level; versions other than CI's selected version have not been exhaustively tested.
+## 2. CLI
 
 ```bash
 dotnet build Transpiler.slnx -c Release
 CLI=src/Transpiler.Cli/bin/Release/net10.0/Transpiler.Cli.dll
 
-dotnet "$CLI" compile samples/Hello.cs --target js --out artifacts/hello.mjs
-node artifacts/hello.mjs welcome
+dotnet "$CLI" compile samples/PortableBcl.cs --bcl portable \
+  --target js --out artifacts/bcl.mjs --manifest artifacts/bcl.manifest.json
+node artifacts/bcl.mjs
 
-dotnet "$CLI" compile samples/Hello.cs --target py --out artifacts/hello.py
-python3 artifacts/hello.py welcome
+dotnet "$CLI" compile samples/PortableBcl.cs --bcl portable \
+  --target py --out artifacts/bcl.py
+python3 artifacts/bcl.py
 ```
 
-Assembly-first operation:
+Commands: `compile`, `emit-pe`, `inspect`, `analyze`, `capabilities`. `inspect` decodes the input without claiming backend compatibility. `analyze` links, specializes and validates the shared representation; emission also applies backend profile guards.
+
+| Option | Contract |
+|---|---|
+| `--target js|javascript|py|python` | Target required by compile |
+| `--out`, `-o` | Target file; required by compile/emit-pe |
+| `--reference`, `-r` | Repeatable explicit implementation DLL; no automatic transitive discovery |
+| `--bcl portable|none` | Enable the documented library substitutions/original slice; default none |
+| `--reference-pack` | Explicit directory containing framework reference DLLs |
+| `--corelib` | Implementation DLL supplying the original BigMul slice when portable BCL is enabled |
+| `--library` | Compile source as a library, exporting eligible public static methods |
+| `--debug` | Roslyn Debug instead of Release source optimization |
+| `--ir` | Shared compilation analysis JSON |
+| `--manifest` | Input/method-origin provenance JSON for target compilation |
+| `--diagnostics` | Structured compiler diagnostics |
+
+Exit status: 0 success, 1 managed compilation/capability rejection, 2 usage/file failure. Target output is written only after successful analysis/emission, via temporary file and replacement. A failed compilation does not delete an older target already at that path. Sidecars are not a multi-file transaction; callers must inspect exit status.
+
+## 3. Linking and specialization
+
+The linker uses explicit inputs, assembly identity validation and deterministic token assignment. It permits one version per simple assembly name, rejects conflicting inputs/reference-assembly implementations, and checks requested identities against supplied implementations. The fixed framework normalization policy is not an arbitrary type-forwarding or binding-redirect engine.
+
+Executable roots are the managed entry point. Library roots are public static non-open-generic methods on non-open-generic root types. Closed instantiations are discovered from roots; arbitrary runtime construction and exporting unconstrained open generic methods are not provided. Extra host roots retain managed array-enumerator and async-adapter methods.
+
+Limits: 256 input modules, 16,384 specialized methods, 4,096 constructed types, 4,096-character constructed identities. These limits bound particular compiler structures, not total CPU/memory use. Complete hostile-input verification and execution quotas remain required for untrusted workloads.
+
+## 4. Library origin and supported surface
+
+`--bcl portable` combines selected abstract framework contracts, the original portable C# library, and one selected original .NET CoreLib implementation. The public API is still bound against the standard framework; substituted algorithms are explicitly selected during linkage.
+
+**Original .NET IL:** `Math.BigMul(int,int):long`. The input implementation hash is recorded and its real method body is emitted. No claim is made that other Math overloads are imported; many existing scalar operations remain exact declared intrinsics.
+
+**Portable C# collections:** selected List<T>, Queue<T>, Stack<T> constructors, storage, mutation, enumeration and materialization members. **Portable LINQ:** selected Range/Repeat, filtering/projection, Take/Skip, Count/Any/All/First/FirstOrDefault, Aggregate, numeric Sum and ToArray/ToList overloads. These are not complete declaring types or full interface surfaces. The [compatibility ledger](compatibility.md) is authoritative at feature level; exact method resolution rejects unsupported members.
+
+**Portable async:** Task/Task<T>, TaskCompletionSource<T>, TaskAwaiter variants, YieldAwaitable, ConfiguredTaskAwaitable variants and AsyncTaskMethodBuilder variants as implemented in `Transpiler.Bcl/Tasks`. Ordinary Roslyn state machines execute through the same compiler; there is no syntax-only async shortcut.
+
+The manifest includes `schema`, `target`, `bcl`, `assemblies` with identity/hash, source `referencePack` inputs where applicable, `transpiled` method origins and instruction counts, and external `intrinsics`. Store it with generated output. A successful source compilation against framework contracts alone does not establish implementation compatibility.
+
+## 5. Managed execution semantics
+
+Integer arithmetic retains fixed widths, signed/unsigned behavior, checked overflow, masked shifts and exact 64-bit representation. JavaScript uses BigInt for 64-bit values. The current profile retains its explicit CoreCLR x64 minimum-signed-value remainder policy; numerical details from the initial specification still apply unless superseded here. Binary64 is supported; Single/binary32 storage, decimal, arbitrary native pointers and SIMD remain unsupported.
+
+Struct values are copied at load/store/call/return/box boundaries; addresses remain aliases. Nested field references follow their parent storage. Constructed generic types have separate statics. Internal class slots, tested interface/MethodImpl/variance combinations and constrained receivers are supported. Explicit native layout, every nullable/span/ref-struct rule, every generic constraint and all runtime type-system corner cases are not certified.
+
+Managed strings preserve wrapper identity, literals and UTF-16 operations. Vector arrays have checked null/bounds/type behavior. Iterators preserve tested disposal/finally paths. General multidimensional/lower-bound arrays, field-RVA initializer helpers, complete globalization, default/localized exception texts and isolated-surrogate console streaming are not complete.
+
+Throw/catch/rethrow/leave/finally use managed exception objects and explicit continuation state. Filters remain rejected because correct cross-frame search-before-unwind is not implemented. Finalizers remain rejected. Stack-overflow and resource-exhaustion behavior follows host limits, not exact CoreCLR behavior.
+
+## 6. Cooperative task profile
+
+Task state is pending, succeeded, faulted or canceled. Task builders classify an escaping OperationCanceledException as cancellation. In contrast, `Task.FromException` and completion-source `SetException` always create a fault even when the supplied exception is an OperationCanceledException. Completion sources cannot complete twice; Try variants report false. CompletedTask is a cached nongeneric completed Task.
+
+Continuations use a single-threaded FIFO. GetResult may drive that queue; failure to make progress or exhaustion of its 100,000-step budget is an explicit profile failure. Host async invocation drives the same translated queue and yields to the host event loop between steps. This is not a .NET thread-pool, execution-context, synchronization-context or blocking-wait guarantee.
+
+`ConfigureAwait(bool)` has no captured .NET context to switch to in this profile. Task.Run, Task.Delay, cancellation tokens, ValueTask, parallel scheduling, full continuation options and async streams are not implemented. Do not depend on task allocation/caching identity or all .NET continuation timing observations beyond the documented corpus.
+
+## 7. Generated host ABI
 
 ```bash
-dotnet "$CLI" emit-pe samples/Hello.cs --out artifacts/Hello.dll
-dotnet "$CLI" inspect artifacts/Hello.dll --out artifacts/metadata.json
-dotnet "$CLI" analyze artifacts/Hello.dll --out artifacts/analysis.json
-dotnet "$CLI" compile artifacts/Hello.dll --target js --out artifacts/from-il.mjs
-dotnet "$CLI" compile artifacts/Hello.dll --target py --out artifacts/from-il.py
+dotnet "$CLI" compile samples/AsyncLibrary.cs --library --bcl portable \
+  --target js --out artifacts/kernel.mjs
+dotnet "$CLI" compile samples/AsyncLibrary.cs --library --bcl portable \
+  --target py --out artifacts/kernel.py
 ```
-
-`emit-pe` also produces a portable PDB for source input and a .NET 10 runtime configuration for executable input. The command does not execute the emitted assembly. `inspect` decodes without performing portable-profile analysis. `analyze` reports normalized methods and stack states. `capabilities` prints JSON containing the opcode/intrinsic registry and profile limitations.
-
-Common flags: `--library`, `--debug`, repeatable `--reference path.dll`, `--ir path.json`, `--diagnostics path.json`. The CLI accepts `-o`, `-t`, and `-r` aliases. Source files must have distinct file names. It does not yet load a `.csproj`, resolve NuGet assets, run source generators, or link multiple implementation assemblies.
-
-Exit codes: 0 success; 1 compilation/capability failure; 2 usage or file-access failure. Unexpected compiler implementation faults are not disguised as normal capability diagnostics.
-
-Output writes use a temporary file in the output directory followed by replacement. Compilation/capability failures do not create a new target artifact. An older artifact already at that path is not automatically deleted; callers must use the exit code rather than file existence to infer success. Analysis/diagnostic sidecars are not a multi-file transaction.
-
-## 3. Reachability and linking
-
-An executable has one managed entry point. A library exports public static methods. The entry point may take no arguments or a string vector and return void/int in normal Roslyn-produced programs. Library overloads are selected by their full managed signature; the short `Type::Method` spelling is accepted only when unambiguous.
-
-The current identity model uses the assembly name, type name, method name, parameters, and return type for method resolution. It is not a complete loader identity model with assembly versions, cultures, public-key tokens, load contexts, and type forwarding. Ambiguous or adversarial metadata remains outside the supported input contract.
-
-Internal calls resolve into the input assembly. External calls must match a registered signature and an allowed framework assembly name. A reference supplied to Roslyn does not automatically link that reference's IL. This distinction is particularly important for existing NuGet libraries.
-
-Conservative import rejections include mixed-mode/native-entry images, netmodules, MethodImpl maps, and vararg calling conventions. Metadata import and stack analysis do not constitute full managed type safety verification.
-
-## 4. Execution semantics
-
-### Integers
-
-Storage types include Boolean, Char, signed/unsigned 8-, 16-, 32-, and 64-bit integers. Evaluation stack kinds collapse narrow integers to `i4`. Helpers interpret signedness from the operation, not solely from the host representation. Storage coercion implements narrowing; unchecked arithmetic wraps; checked operations throw a managed OverflowException when out of range. Signed division truncates toward zero, and remainder follows that quotient convention. Shift counts are masked to five or six bits for 32-/64-bit values.
-
-The profile selects CoreCLR x64 behavior for `minSigned / -1` and `minSigned % -1`: both raise OverflowException. The latter is explicitly documented as an Intel-specific possibility in the official `OpCodes.Rem` API documentation: https://learn.microsoft.com/en-us/dotnet/api/system.reflection.emit.opcodes.rem?view=net-10.0 . The initial oracle is Linux x64; this is not a claim that every CLR architecture chooses the same remainder behavior.
-
-JavaScript 64-bit values use BigInt. Public host calls must use BigInt outside the exact Number integer range. Python uses integers with explicit width normalization. Native-sized integers and pointers are unsupported.
-
-### Floating point
-
-Binary64 arithmetic, signed zero, infinity, NaN comparisons, and checked floating-to-integer conversion are implemented. Unchecked floating-to-integer conversion is rejected because this MVP has not committed to all unspecified/out-of-range target policies. Single/binary32 storage and rounding are rejected. Decimal and SIMD are not implemented.
-
-Current numeric text formatting covers invariant, common round-trip/general cases exercised by tests; it is not a complete .NET formatting/culture implementation. NaN payload preservation, all shortest-decimal tie cases, and exhaustive binary64 conversion/formatting equivalence are not certified.
-
-### Objects, arrays, strings, and references
-
-Class objects preserve identity. Instance fields, constructors, static fields, supported type initialization, local class virtual slots, and `newslot` dispatch are implemented. General structs, interfaces, generic types, arbitrary MethodImpl dispatch, and external virtual overrides require additional lowering.
-
-Arrays are checked zero-based single-dimensional vectors. Loads/stores check null and bounds; reference-element stores check runtime compatibility. General rectangular/non-zero-lower-bound arrays are unsupported. Nested covariance and the full array interface surface are not certified.
-
-Strings have explicit reference identity. Literal interning, ordinal content equality, UTF-16 length/indexing, substring slicing, and the registered concatenation overloads are implemented. Python normalizes paired-surrogate representations so concatenating separately sliced halves yields the original UTF-16 sequence. String comparison, normalization, globalization, and all BCL overloads are not implied by those operations. Console encoding of isolated surrogates across write boundaries is not a completed compatibility surface.
-
-Managed references model argument/local/field/array/box storage. Tests cover aliasing and byref returns. This is not a complete byref escape/lifetime verifier or support for unmanaged addresses. Primitive boxing preserves boxed type and copied value; general struct boxing is not implemented.
-
-### Exceptions and initialization
-
-Registered managed exception objects can be thrown and caught by assignable type. `leave`, `finally`, `rethrow`, nested unwinding, and exception replacement are implemented. The runtime contains fault-handler lowering, but the C# corpus does not provide full fault-clause coverage. Exception filters are rejected. Exact managed stack traces, exception-dispatch stack preservation, all framework default/localized message text, and serialization are outside the current guarantee. Explicitly supplied exception messages are preserved.
-
-Type initializers have running/completed/failed state. Failure remains cached. `beforefieldinit` allows deferred initialization. Cross-thread synchronization and explicit GC/finalization services are unsupported.
-
-## 5. Exact library surface
-
-Run the registry command for the authoritative list:
-
-```bash
-dotnet "$CLI" capabilities --out artifacts/capabilities.json
-```
-
-The initial registry includes selected Console.Write/WriteLine overloads; Object construction/reference equality/string conversion; String equality, length, indexing, substring, and selected concatenation overloads; primitive ToString; selected exception constructors and Message; Math.Abs/Min/Max/Sqrt/Floor/Ceiling/Truncate; and Double.IsNaN/IsInfinity.
-
-Each binding includes managed type, member name, parameter types, return type, static/instance distinction, and an accepted framework assembly name. Matching a signature does not imply the entire declaring class is implemented. There is no general fallback for filesystem, networking, reflection, Tasks, collections, delegates, LINQ, globalization, native interop, or UI frameworks.
-
-## 6. Generated-module ABI
-
-Compile the example library:
-
-```bash
-dotnet "$CLI" compile samples/Library.cs --library --target js --out artifacts/kernel.mjs
-dotnet "$CLI" compile samples/Library.cs --library --target py --out artifacts/kernel.py
-```
-
-JavaScript:
 
 ```javascript
-import { invoke, setOutput, manifest } from './kernel.mjs';
-console.log(invoke('Kernel::Add', [9007199254740993n, 2n]));
-console.log(invoke('Kernel::Gcd(System.Int32,System.Int32)', [84, 30]));
-console.log(invoke('Kernel::Echo', ['hello']));
-setOutput(text => process.stdout.write(text));
-console.log(manifest.exports);
+import { invoke, invokeAsync, retain, dereference, release, runtimeInfo } from './kernel.mjs';
+console.log((await invokeAsync('Kernel::Calculate', [5])).toString());
+const object = invoke('Kernel::Make');
+const handle = retain(object);
+console.log(dereference(handle) === object);
+release(handle);
+console.log(runtimeInfo());
 ```
-
-Python:
 
 ```python
-from kernel import invoke, set_output
-print(invoke('Kernel::Add', [9007199254740993, 2]))
-print(invoke('Kernel::Gcd(System.Int32,System.Int32)', [84, 30]))
-print(invoke('Kernel::Echo', ['hello']))
-set_output(lambda text: print(text, end=''))
+import asyncio
+from kernel import invoke_async, runtime_info
+async def example():
+    print(await invoke_async('Kernel::Calculate', [5]))
+    print(runtime_info())
+asyncio.run(example())
 ```
 
-`invoke(name, args)` validates export selection and arity, coerces primitive/string/array inputs, and unwraps string/Boolean outputs. General object marshalling, mutable host-array identity, promises/awaitables, callbacks, and byref host ABI are not stable public surfaces. Array inputs are copied into managed wrappers; array outputs remain runtime wrappers in this MVP. Each imported generated module has its own static/runtime state.
+`invoke` selects a full signature or an unambiguous short `Type::Method` name, checks arity and marshals the supported primitive/string inputs and results. Array inputs are copied into wrappers; general object/ref/callback marshalling is not a stable interprocess ABI. Use BigInt for JavaScript Int64/UInt64 values outside the exact Number range.
 
-Executable modules expose `main(args)` and automatically invoke it only when executed as the main file. A browser may import the JavaScript ES module and call `main` explicitly with a custom output writer; browser integration is designed but not covered by the initial Node-based conformance run.
+`invokeAsync(name,args,{maxSteps})` and `invoke_async(name,args,max_steps=...)` await a linked Task result; non-task exports return their ordinary value. Default step budget is 100,000. A step budget does not interrupt an infinitely running managed method. Python uses asyncio cooperation; JavaScript uses host promises.
 
-## 7. Diagnostics
+Output callbacks remain `setOutput(writer)` and `set_output(writer)`. Each generated module owns separate statics/runtime state. Cross-module managed-object interchange is not supported as one shared CLR load context.
 
-| Code family | Meaning |
-|---|---|
-| `TR0001` / `TR0002` | CLI/file access or diagnostic sidecar errors |
-| Roslyn `CS...` | Source compilation errors |
-| `TR0101` | Missing compiler-host framework reference set |
-| `TR1001` / `TR1002` | Invalid PE/metadata or native/mixed-mode input |
-| `TR1010` / `TR1011` | Unsupported MethodImpl map / varargs |
-| `TR2000` | No entry point or library roots |
-| `TR2001` / `TR2002` / `TR2003` | Unsupported opcode / external call / type |
-| `TR2004`–`TR2008` | Missing body, generics, local initialization, or field capability issues |
-| `TR2010`–`TR2012` | Filter/handler, interface dispatch, or external virtual-slot limitation |
-| `TR2100` / `TR2101` | Stack/control-flow/type-shape validation |
-| `TR2200` and later | Backend linkage/profile validation |
+## 8. Host heap contract
 
-Diagnostics include method signatures and IL offsets when available. Portable PDBs are emitted but source-level mappings from IL diagnostics and generated source maps are planned rather than implemented.
+`WeakReference<T>` supports the one-target constructor, SetTarget and TryGetTarget. `GC.KeepAlive(object)` establishes an object-use boundary; `RuntimeHelpers.GetHashCode(object)` gives a runtime-stable identity hash, with zero for null. Numeric hash equality with another .NET process is not promised. Weak reference eligibility requires the host service; absence is explicit.
 
-## 8. Determinism and safety
+`retain` creates a strong opaque root; `dereference` returns its target; `release` removes it and returns whether it existed. Handles are monotonic safe integers and are not reused. A second release returns false; dereferencing a released/unknown handle fails. Root removal does not force reclamation.
 
-Re-emitting the same assembly under the same toolchain produces byte-identical target source in CI. This is not a claim of byte-identical PE output across different SDK/reference-pack versions. Generated source contains target-language method implementations and semantic helpers, not the original executable image.
+`runtimeInfo`/`runtime_info` reports host GC, weak-reference availability, explicit-root count, cooperative scheduling, and false for forced collection, managed finalizers and pinning. GC.Collect, WaitForPendingFinalizers, resurrection tracking and native addresses are deliberately not no-op implementations. Ordinary wrapper objects are reclaimed by the host; no secondary managed collector is claimed.
 
-Resource quotas, cancellation, hostile-metadata fuzz hardening, recursion trampolines, stack-overflow compatibility, and a capability sandbox remain production-hardening requirements. Run untrusted compilation and generated code in separate restricted processes/containers. Do not expose the PoC directly as a public arbitrary-code execution service.
+## 9. Diagnostics, reproducibility and safety
+
+The original TR000x/100x/200x/210x families remain. TR3000–3004 cover graph budget, reference implementation misuse, input conflicts, requested identity mismatch and duplicate definitions. TR3100/3101 cover generic budgets/open instances; TR3200 covers unavailable selected CoreLib body. Unsupported members and runtime services retain actionable method/IL diagnostics.
+
+Target output is deterministic for identical compiler and assembly inputs; dependency argument ordering is tested. Reference-pack discovery and SDK roll-forward are conveniences, not cross-version reproducibility promises. Keep the exact manifest, SDK, source snapshot and licenses for releases.
+
+The compiler is not a full security verifier or sandbox. Metadata identity checks do not authenticate assemblies. Host root handles are ownership conveniences, not authorization tokens. Run untrusted compilation and execution in isolated, resource-limited processes. See [security scope](../SECURITY.md).

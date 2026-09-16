@@ -1,164 +1,100 @@
-# Architecture: a managed-semantics compiler with multiple source backends
+# Architecture — linked managed libraries and host runtime services
 
-Status: initial implementation, 2026-09-16. **Implemented components and proposed components are distinguished throughout.** See [research](research/industry-state-2026-09-16.md) for external evidence and [specification](specification.md) for the current executable contract.
+Updated 2026-09-16, second implementation batch. Source-artifact schema: 2; existing profile identifier: `portable-mvp`; optional library policy: `portable-bcl-v1`. These names describe the implemented subset, not universal CLI compatibility. The [initial architecture](history/0.1/architecture.md) is preserved as a historical snapshot. External evidence and design trade-offs are in [BCL/runtime research](research/bcl-runtime-2026-09-16.md).
 
-## 1. Architectural decision
-
-Roslyn is the C# frontend. A real CLI assembly is the canonical input to the portable compilation path. JavaScript and Python are source backends, not alternate CLR hosts. The generated application contains target-language semantic helpers but does not load its original DLL, invoke a .NET subprocess, use Python.NET, or ship a generic IL bytecode interpreter.
+## 1. Implemented pipeline
 
 ```mermaid
 flowchart TB
-    CS[C# source files] --> ROS[Roslyn compilation]
-    ROS --> PE[PE assembly + CIL + metadata]
-    DLL[Existing managed DLL] --> PE
-    PE --> IMPORT[PEReader / metadata / signature import]
-    IMPORT --> MODEL[AssemblyModel / method bodies / exception regions]
-    MODEL --> NORMAL[Normalize compact CIL encodings]
-    NORMAL --> REACH[Closed-world roots and reachable methods]
-    REACH --> VERIFY[Typed evaluation-stack fixed point]
-    REACH --> CAP[Opcode / type / exact-intrinsic capabilities]
-    VERIFY --> ANALYSIS[CompilationAnalysis]
-    CAP --> ANALYSIS
-    ANALYSIS --> LINK[Virtual slots / fields / static initialization metadata]
-    LINK --> EMIT[Shared source-lowering implementation]
-    EMIT --> JS[Standalone JavaScript ES module]
+    CS[C# source] --> ROS[Roslyn + selected .NET reference pack]
+    ROS --> PE[Real PE / CIL / metadata]
+    DLL[Existing root DLL] --> PE
+    PE --> IMPORT[PEReader / metadata / signatures]
+    DEPS[Explicit implementation DLLs] --> LINK[Identity validation + deterministic linking]
+    IMPORT --> LINK
+    BCL[Optional portable C# BCL implementation IL] --> LINK
+    ORIGINAL[Selected original CoreLib implementation IL] --> LINK
+    CONTRACT[Selected abstract reference-pack contracts] --> LINK
+    LINK --> POLICY[Explicit BCL substitution policy]
+    POLICY --> GENERIC[Bounded closed-generic specialization]
+    GENERIC --> ANALYSIS[Reachability + typed stack states + capabilities]
+    ANALYSIS --> META[Storage / class and interface slots / host roots]
+    META --> EMIT[Statically emitted target-language methods]
+    EMIT --> JS[Standalone JavaScript module]
     EMIT --> PY[Standalone Python module]
-    JSRT[JavaScript semantic helpers] --> JS
-    PYRT[Python semantic helpers] --> PY
-    ANALYSIS --> IR[JSON analysis and diagnostics]
+    SERVICES[Host heap / weak references / roots / async ABI] --> JS
+    SERVICES --> PY
+    ANALYSIS --> MANIFEST[Input hashes + method-origin manifest]
 ```
 
-This is an assembly-to-source compiler. Calling it a syntax transpiler would obscure the most important part of its contract: the same imported method bodies drive both targets.
+The library algorithms are compiled through the same CIL path as application methods. There is no hidden CoreCLR process, Python.NET import, dynamic IL decoder, or .NET download in a generated program. The conservative backend still uses source-level program-counter dispatch and explicit evaluation stacks; it does not yet implement SSA optimization or reconstruct idiomatic high-level source.
 
-## 2. Physical module boundaries, implemented now
+## 2. Physical modules
 
-| Project | Responsibility | Dependencies |
-|---|---|---|
-| `Transpiler.Core` | Immutable import models, low-level CIL decoder, PE/metadata importer, normalization, reachability, stack-state analysis, diagnostics, intrinsic signatures | .NET framework APIs only |
-| `Transpiler.Frontend.Roslyn` | Compile C# 14 sources to PE and portable PDB; expose compiler diagnostics | Core and SDK-shipped Roslyn assemblies |
-| `Transpiler.Backends` | Linkage metadata, virtual-slot tables, shared source emitter, bundled JS/Python semantic implementations | Core |
-| `Transpiler.Cli` | Input/output, command parsing, diagnostics, inspect/analyze/compile/capability commands | The preceding projects |
-| `tests` | CoreCLR differential oracle, target execution, deterministic re-emission, rejection corpus, library ABI checks | Python standard library; external `dotnet` and `node` executables |
-
-The initial backend selection is an enum with one shared emitter, not a dynamically discovered plugin system. A public backend registry and independently packaged backend projects are planned after the managed IR contract stabilizes. Do not infer plugin loading from the long-term architectural diagrams.
-
-## 3. Data flow and invariants
-
-### Frontend boundary
-
-`RoslynFrontend.Compile` accepts explicitly named source files and optional assembly references. It emits real PE bytes and a portable PDB. It does not translate C# syntax directly into either target. Release and Debug CIL are both tested. Source names are normalized to file names by the CLI; duplicate file names within a compilation are rejected to avoid ambiguous provenance.
-
-The current reference set comes from the compiler host's trusted platform assemblies. This makes the PoC self-contained with its chosen SDK, but is not a hermetic reference-pack resolver. The future resolver must locate the chosen target-framework reference pack, hash every input, resolve package assets deterministically, and record the exact SDK/compiler/reference-pack identity in a build manifest.
-
-### Import boundary
-
-`AssemblyImporter.Read` uses `PEReader` and `MetadataReader`; it does not execute module initializers or use `Assembly.Load` on input. The decoder preserves original IL offsets, next offsets, method signatures, locals, and exception-region boundaries. Metadata tokens are resolved into method/field/type descriptions rather than guessed from source spelling.
-
-The current linker scope is **one input assembly**. Framework calls are satisfied only by exact registered intrinsics. `--reference` helps Roslyn bind source, but does not promise that the referenced assembly's implementation is linked into the target output. Unsupported external implementation dependencies are diagnosed.
-
-### Reachability and capability boundary
-
-Executable roots are the managed entry point. Library roots are public static methods. Reachability adds direct internal calls, candidate virtual overrides, and relevant type initializers. The engine checks reachable method signatures, locals, field access, opcodes, and external intrinsic signatures before emitting a target artifact.
-
-A few unsupported metadata shapes are conservatively rejected during import even when unused: MethodImpl override maps and vararg methods. This is intentionally stronger than perfect tree shaking. Capability reporting must describe this rather than suggesting every unreachable unsupported feature is harmless.
-
-### Stack analysis boundary
-
-Each instruction boundary has an incoming evaluation-stack vector. Kinds distinguish `i4`, `i8`, floating evaluation values, object references, and typed managed references. A worklist propagates these vectors over branches and handler entries. Joins must have identical stack shape/kinds. Arguments, locals, call signatures, return shape, and `maxstack` constrain propagation.
-
-This is **not full ECMA verification**. Object references currently collapse to one stack category; subtype proofs, constructor initialization state, all byref lifetime/escape rules, all protected-region branch restrictions, and complete metadata identity are not proven. The compiler is not a security boundary for adversarial assemblies.
-
-### Output boundary
-
-The emitter visits statically known instructions and prints concrete source statements. For example, integer addition becomes a call with a compile-time operation and stack-kind constant, not an instruction fetched from an input bytecode stream. A generated method uses a program-counter dispatcher to represent arbitrary control flow, including irreducible flow. Output metadata contains type/linkage/exception information, **not an executable instruction array**.
-
-This conservative control-flow lowering is intentionally retained as a correctness baseline. It is neither an SSA optimizer nor an idiomatic source-code decompiler, and performance claims should not be inferred from it.
-
-## 4. Runtime object model
-
-| Representation | Meaning |
+| Project | Responsibility |
 |---|---|
-| `CliObject(type, fields)` | Managed class identity and instance storage |
-| `CliString(text)` | String reference identity, with UTF-16 operations and literal interning |
-| `CliArray(element, data)` | Element type and checked zero-based vector storage |
-| `CliBox(type, value)` | Primitive boxed value with exact boxed type identity |
-| `CliRef(get, set)` | Managed address to argument/local/field/array/box storage |
-| `CliError(value)` | Host exception wrapper carrying the managed exception object |
-| `CliFlow` | Per-frame protected-region search and pending finally/fault continuations |
-| `CliRuntime` | Method linkage, intrinsic dispatch, static state, allocation, conversions and semantic helpers |
+| `Transpiler.Core` | PE/CIL import, scoped identities, deterministic linking, substitution policy, closed specialization, stack/capability analysis, runtime-contract declarations |
+| `Transpiler.Frontend.Roslyn` | Source compilation, reference-pack discovery/hashes, `PortableCompilation.Link` orchestration |
+| `Transpiler.Bcl` | Original portable C# collection, iterator, LINQ, task, awaiter and async-builder algorithms |
+| `Transpiler.Backends` | Source emission, class/interface tables, value-copy semantics, target runtime helpers and host-service adapters |
+| `Transpiler.Cli` | Commands, explicit dependency inputs, portable-library selection, provenance sidecars and atomic target-file replacement |
 
-Host garbage collection reclaims these wrappers. This does not implement .NET finalization timing, weak-reference behavior, pinning, heap inspection, or explicit GC APIs. Resource lifetime must remain explicit in future compatibility layers.
+The BCL project does not reference compiler implementation types. It is compiled into an ordinary managed library; the compiler consumes its assembly. This prevents the library from depending on target source-printing internals and allows the same algorithms to be tested against standard .NET behavior.
 
-### Numeric representation
+## 3. Identity and reference boundaries
 
-JavaScript `Int64`/`UInt64` use BigInt. The reference implementation also uses exact BigInt intermediate arithmetic for integer helpers where Number multiplication would lose information. Python uses integers with explicit masks/sign interpretation. Stack storage, signed operation, unsigned operation, and storage coercion are separate concepts.
+The source frontend uses `.NET 10` reference-pack assemblies rather than the compiler process's trusted platform assembly list. An explicit `--reference-pack` selects a directory; otherwise the resolver chooses an installed .NET 10 reference pack. A source manifest records its inputs. Reproduction still requires fixing SDK, pack, implementation assembly and compiler versions; automatic installed-pack discovery is not a lockfile-based MSBuild/NuGet resolver.
 
-Unchecked arithmetic wraps at the selected width; checked arithmetic checks mathematical bounds before wrapping. Signed division truncates toward zero. Shift counts are masked to the operand width. The current numerical profile selects CoreCLR x64's overflow behavior for signed minimum divided **or remaindered** by minus one; this platform-specific edge is explicitly documented in the specification.
+Application types are scoped as `[Assembly]Namespace.Type`. The linker validates supplied assembly name/version/culture/public-key-token identities and rejects mismatched or conflicting inputs. It permits one version per assembly simple name and remaps method tokens deterministically. Dependency order must not change output. Full type forwarding, arbitrary binding redirects, multiple load contexts and transitive package discovery are not implemented.
 
-Binary64 operations account for division by signed zero and unordered NaN comparisons. Binary32 storage/rounding, decimal, native integers, all formatting/culture cases, and bit-exact NaN payload transport remain separate work items.
+Reference assemblies are rejected as executable dependencies. The optional BCL loader has a narrow exception: selected abstract interfaces can contribute declaration metadata only. Their abstract declarations participate in interface dispatch; reference placeholder bodies are never used as algorithms.
 
-### Managed references and copies
+## 4. Three implementation origins
 
-A reference is a storage location, not a copied value. Aliasing the same location twice must remain observable. `CliRef` therefore points to a getter/setter pair with typed coercion. The current supported value types are primitives. General structs require a future storage/value/address distinction: loading a struct value copies it; obtaining its address aliases it; boxing copies it into a box. A dictionary of fields alone cannot make all three behaviors correct.
+**Original implementation IL:** the portable loader selects `System.Math.BigMul(Int32,Int32)` from the selected real `System.Private.CoreLib.dll`. The body passes through import, linking, analysis and emission. `--corelib` overrides the default host implementation path. Missing or unsupported bodies fail; there is no replacement with a same-named target helper. This is a small proof of original BCL adoption, not general CoreLib compatibility.
 
-### Dispatch
+**Original portable managed code:** `Transpiler.Bcl` implements selected collection/LINQ/task contracts in C#. `LibrarySubstitution` maps explicit portable type identities to their public framework identities. Exact method resolution still applies after substitution, so an unsupported overload such as `List<T>.Sort()` remains an error.
 
-Virtual slots are distinct from names. A normal override reuses its base slot; `newslot` creates another slot even when its source name matches. Generated type tables flatten inherited slots. Nonvirtual `call` and virtual/null-checking `callvirt` stay distinct. Arbitrary MethodImpl maps, interface dispatch, generic virtual methods, and covariant-return adaptation are not implemented.
+**Target runtime services:** allocation representations, boxing, storage addresses, fundamental string/number operations, dispatch, weak references and host interoperability remain target-language helpers. These are not misidentified as translated BCL method bodies. The compilation manifest separates emitted bodies from external bindings.
 
-### Static initialization
+Generated source containing framework implementation bodies includes the upstream .NET MIT notice. Compiler bundles preserve SDK notices. See [third-party provenance](../THIRD-PARTY-NOTICES.md).
 
-Per-type state distinguishes not started, running, completed, and failed. Recursion into a running initializer observes current storage. A failed initializer is wrapped as a type-initialization failure and remains failed. For `beforefieldinit` types, initialization may be deferred until field access. No multithreaded initialization locking is provided by this single-threaded profile.
+## 5. Closed generic specialization and host reachability
 
-### Exception continuations
+`GenericSpecializer` retains constructed identities and instantiation-specific static storage. It substitutes generic type/method contexts and closes methods needed by internal calls, virtual/interface candidates and explicit MethodImpl maps. Expansion has limits: 16,384 methods, 4,096 types and 4,096 characters per constructed identity. Open dynamic instantiation and complete constraint verification are not implemented.
 
-The pending continuation records the remaining handlers, final target, managed exception, selected catch, and active finally/fault handler. A local exception caught inside a finally must not discard the earlier pending exception. An exception escaping that finally replaces the old continuation. `leave` clears the evaluation stack and executes applicable finally blocks. `rethrow` preserves the managed exception object.
+Some managed methods are invoked by host adapters rather than visible application call instructions. These must become explicit roots before ordinary reachability pruning. Two implemented examples are array-enumerator constructors and Task/GetAwaiter/GetResult/FIFO-pump operations used by the async host ABI. Without these roots, valid generated metadata can point to methods that were accidentally removed.
 
-**Filters are not approximated.** Full CLI filter semantics require a first search pass before stack unwinding, potentially evaluating a caller's filter before a callee's finally. The planned implementation uses explicit managed-frame metadata and a shadow stack; host exceptions alone cannot restore a frame that has already unwound. See the research document's IL2CPP comparison for why this distinction matters.
+## 6. Values, addresses and dispatch
 
-## 5. Long-term compiler architecture, proposed
+`CliValue` represents a struct value. Loads, stores, parameter passing, returns and boxing copy struct values; object references retain identity. `CliRef` represents a storage address. A reference into a struct field re-evaluates its parent storage on access, so assigning a new struct to that storage does not detach an existing field reference. The corpus tests nested storage, struct arrays, boxed values and generic collections of structs.
 
-```mermaid
-flowchart LR
-    INPUT[CLI + modern .NET augments] --> HIR[Managed HIR]
-    HIR --> MONO[Generic reification / specialization]
-    MONO --> CFG[Explicit CFG + exception edges]
-    CFG --> SSA[Stack-to-SSA + memory/effect SSA]
-    SSA --> OPT[Semantics-preserving passes]
-    OPT --> LEGAL[Target capability legalization]
-    LEGAL --> JIR[JavaScript IR]
-    LEGAL --> PIR[Python IR]
-    LEGAL --> CIR[C++ IR / optional EmitC]
-    JIR --> JCODE[JavaScript source]
-    PIR --> PCODE[Python source]
-    CIR --> CCODE[C++ source]
-```
+Class slots distinguish override from `newslot`. Interface tables consider implicit implementations, explicit MethodImpl maps and tested variance cases. Constrained calls preserve mutable value-type receivers and boxed dispatch. This remains a bounded compatibility implementation, not certification of every generic virtual/default-interface/variance combination.
 
-Managed HIR must retain operations such as checked add, constrained call, boxed copy, managed reference, type initialization, and exception search. Erasing these too early into host-language expressions makes both verification and optimization harder.
+Delegates carry target identity plus translated method identity and an immutable invocation sequence. The runtime supplies invocation and combination/removal/equality mechanics; captured closure bodies are ordinary translated methods. Low-level function pointers are supported here for delegate construction, not arbitrary unmanaged `calli` interop.
 
-An effect system should distinguish: may throw, may allocate, reads/writes managed storage, may initialize a type, may invoke user code, volatile/atomic access, and suspension. For example, moving a bounds check across a call can change both exception order and user-visible side effects. Eliminating an apparently unused static-field read can suppress a type initializer. These are semantic changes unless proven safe.
+## 7. Collections, iterators and async are managed algorithms
 
-SSA conversion introduces explicit values at stack joins. Address-taken storage remains modeled as storage, not incorrectly promoted to immutable SSA values. Exception edges require dominance/liveness treatment separate from ordinary successors. Struct copy insertion should precede optimizations that assume reference identity.
+The portable BCL supplies selected List, Queue, Stack and Enumerable methods. Enumerators implement the required generic/non-generic interfaces. Lazy LINQ uses actual Roslyn-generated iterator state machines, including early-disposal paths. Arrays and strings need a small host representation bridge, but enumeration algorithms use the managed `ArrayEnumerator<T>` implementation.
 
-The optimized backends can then recover loops/conditions, coalesce straight-line blocks, devirtualize closed-world calls, inline verified intrinsics, specialize primitive representations, and emit `Math.imul` or equivalent only where the width/overflow proof permits it. The current dispatcher backend remains a regression oracle for these transformations.
+Tasks use a cooperative single-threaded FIFO scheduler implemented in C#. The builder starts the real Roslyn state machine. On suspension, a state-machine box owns the state and shares the completion Task. Release struct state machines and Debug class state machines are tested. Awaiters, completion sources, exception propagation and cancellation state are managed operations, not a rewrite of the async method into a host promise body.
 
-## 6. Runtime, library, and host separation
+JavaScript `invokeAsync` and Python `invoke_async` drive the translated scheduler and yield to their host event loop. They adapt return values and failures, with a step budget. This does not implement .NET thread-pool scheduling, synchronization/execution contexts, wall-clock timers or cancellation-token propagation. `Task.Run` and `Task.Delay` are rejected rather than silently emulated synchronously.
 
-A backend answers **how an operation is represented**. A semantic runtime answers **what managed behavior must happen**. A library implementation answers **what a referenced managed API does**. A host adapter answers **which external effects are available**. These are four independent responsibilities.
+## 8. Heap and lifetime boundary
 
-The future capability manifest should name required services, not infer them from the target language: filesystem, networking, clock, entropy, console, threads, native library loading, browser DOM, UI framework integration, and dynamic compilation. A browser, Node, embedded WebScene engine, and Python service host should share the same managed core while supplying different capability adapters.
+Ordinary managed objects remain JavaScript/Python objects. Host collectors trace their references, including closure storage, boxes, tasks and exception objects. There is no separate collector maintaining a shadow heap in this profile.
 
-Native interop cannot be made portable merely by printing a foreign function name. Each ABI binding needs layout, calling convention, ownership, pinning/copying, error translation, and lifetime rules. Unsupported host capabilities should be rejected at deployment/link time.
+`HostedRuntime` adds generic weak references, identity hash codes, KeepAlive call boundaries and explicit root handles. JavaScript uses WeakRef/WeakMap; Python uses weakref/WeakKeyDictionary and weak-reference-enabled wrapper classes. The root map owns only objects explicitly retained by the host. It is not populated on every allocation. Releasing a handle removes that root; it does not force destruction or collection. Dereferencing a stale handle fails.
 
-## 7. C++ strategy
+`runtimeInfo`/`runtime_info` exposes the actual service policy: host GC, weak-reference availability, current explicit-root count, no forced collection, no managed finalizers, no pinning, cooperative single-thread scheduling. A weak-reference test with a still-strongly-reachable object is evidence for target access and identity, not proof of precise reclamation timing.
 
-Two planned profiles serve different goals. `native-std` accepts a constrained program set whose lifetime/ownership rules permit standard-library-only native lowering. `cpp-managed` can support broader managed semantics through explicit generated/support code, potentially including a tracing heap. Using only standard C++ as a dependency does not mean there are no runtime services.
+## 9. Deliberately separate future architecture
 
-`shared_ptr` alone is not a complete CLI heap: cycles, finalization, weak references, object layout, interior references, and identity semantics remain. A code generator must not conceal those gaps behind a “native” label. Both C++ profiles are planned, not delivered in this MVP.
+The next compiler IR should make basic blocks, exception edges, storage locations and effects explicit before stack-to-SSA and source restructuring. Throwing, allocation, type initialization, mutation, callbacks and suspension must constrain transformations. The current source-dispatch backend remains a differential baseline.
 
-## 8. Integration and evolution
+A logical managed heap would require compiler-emitted roots and safepoints, not just a mark/sweep demonstration. A future C++ backend could adapt a native collector's execution-engine interface, including root scanning, type layout, barriers, handles and suspension. Those are distinct deployment profiles; no native GC, C++ emitter, arbitrary reflection engine or dynamic runtime is included here.
 
-RoslynWeb or another existing source frontend can supply assembly bytes to Core. An optional Roslyn provenance sidecar can attach sequence points or recognize source-generated patterns, but cannot become a correctness requirement for precompiled DLL input.
+## 10. Validation and limits
 
-The next stable API should expose immutable compile requests, reference/capability resolvers, diagnostics with provenance, a pass pipeline, cancellation/resource budgets, backend descriptors, and output manifests. Keep metadata identity and target ABI versioning separate. A backend must reject a program requiring unknown semantics rather than silently accepting a newer IR schema.
-
-No remote execution, telemetry, runtime download, or external service is required by generated programs. The compiler currently assumes trusted inputs and bounded programs; run compilation/execution in an OS sandbox when processing third-party code.
+The second-batch corpus has 64 harness cases, including 50 Release/Debug console configurations executed by both targets, deterministic re-emission, a three-assembly graph, provenance, async/root host ABI and rejection boundaries. [Testing](testing.md) explains the evidence and [compatibility](compatibility.md) distinguishes supported slices from remaining work. A public deployment still needs process isolation, resource quotas and a stronger metadata/type-safety verifier.
