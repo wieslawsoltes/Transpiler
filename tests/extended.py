@@ -125,6 +125,10 @@ def boundaries(h):
 
 
 def register(h):
+    import block_batch
+    block_batch.register(h)
+    import awaitable_batch
+    awaitable_batch.register(h)
     import runtime_batch
     import composition_batch
     runtime_batch.register(h)

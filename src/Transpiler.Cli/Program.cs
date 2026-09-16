@@ -26,9 +26,9 @@ internal static class Program
             {
                 var text = JsonSerializer.Serialize(new
                 {
-                    schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" },
+                    schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" }, dispatchModes = new[] { "instruction", "block" },
                     opcodes = CompilerAnalysis.SupportedOpcodes, intrinsics = IntrinsicCatalog.All,
-                    limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "no reflection or native interop", "no exception filters", "not a security verifier" }
+                    limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "limited type identity only; no member reflection or native interop", "no exception filters", "not a security verifier" }
                 }, Json);
                 if (options.Output is null) Console.WriteLine(text); else Write(options.Output, text);
                 return 0;
@@ -83,13 +83,19 @@ internal static class Program
                 "py" or "python" => SourceTarget.Python,
                 _ => throw new ArgumentException("--target must be javascript (js) or python (py).")
             };
-            var generated = SourceEmitter.Emit(analysis, target);
+            var dispatch = options.Dispatch switch
+            {
+                "instruction" => DispatchMode.Instruction,
+                "block" => DispatchMode.BasicBlock,
+                _ => throw new ArgumentException("--dispatch must be instruction or block.")
+            };
+            var generated = SourceEmitter.Emit(analysis, target, new SourceEmissionOptions(dispatch));
             var destination = RequireOutput(options);
             if (options.IrOutput is not null) Write(options.IrOutput, JsonSerializer.Serialize(analysis, Json));
             Write(destination, generated.Text);
             if (options.Manifest is not null) Write(options.Manifest, JsonSerializer.Serialize(new
             {
-                schema = 2, target = target.ToString(), bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
+                schema = 2, target = target.ToString(), dispatch = options.Dispatch, bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
                 assemblies = assembly.Inputs, referencePack = managed?.ReferencePack?.Inputs,
                 transpiled = analysis.Methods.Where(m => m.Method.Instructions.Length != 0)
                     .Select(m => new { assembly = m.Method.Reference.Assembly, method = m.Method.Key, instructions = m.Method.Instructions.Length }),
@@ -97,7 +103,7 @@ internal static class Program
                     .Where(m => analysis.Assembly.Resolve(m) is null).Select(m => new { method = m.Key, binding = IntrinsicCatalog.Find(m, analysis.Assembly) }).Distinct()
             }, Json));
             if (options.Diagnostics is not null) Write(options.Diagnostics, "[]\n");
-            Console.WriteLine(JsonSerializer.Serialize(new { output = destination, target = target.ToString(), generated.MethodCount, generated.InstructionCount, bytes = Encoding.UTF8.GetByteCount(generated.Text), profile = "portable-mvp" }));
+            Console.WriteLine(JsonSerializer.Serialize(new { output = destination, target = target.ToString(), generated.MethodCount, generated.InstructionCount, generated.DispatchCaseCount, dispatch = options.Dispatch, bytes = Encoding.UTF8.GetByteCount(generated.Text), profile = "portable-mvp" }));
             return 0;
         }
         catch (CompilationException error)
@@ -141,6 +147,7 @@ internal static class Program
             {
                 case "--out": case "-o": options.Output = Value(); break;
                 case "--target": case "-t": options.Target = Value(); break;
+                case "--dispatch": options.Dispatch = Value(); break;
                 case "--ir": options.IrOutput = Value(); break;
                 case "--diagnostics": options.Diagnostics = Value(); break;
                 case "--reference": case "-r": options.References.Add(Value()); break;
@@ -167,6 +174,7 @@ internal static class Program
         public List<string> References { get; } = [];
         public string? Output { get; set; }
         public string? Target { get; set; }
+        public string Dispatch { get; set; } = "instruction";
         public string? IrOutput { get; set; }
         public string? Diagnostics { get; set; }
         public bool Bcl { get; set; }
@@ -187,7 +195,8 @@ internal static class Program
 
         Options: --library, --debug, --reference path.dll (repeatable),
                  --ir analysis.json, --diagnostics diagnostics.json, --manifest provenance.json,
-                 --bcl portable|none, --reference-pack directory, --corelib implementation.dll
+                 --bcl portable|none, --reference-pack directory, --corelib implementation.dll,
+                 --dispatch instruction|block
 
         C# compilation requires .NET 10 / Roslyn. Generated .mjs and .py programs do not.
         portable-mvp is an explicit subset, not universal CLI or .NET library compatibility.
