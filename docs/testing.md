@@ -1,61 +1,48 @@
 # Testing and reproducibility
 
-## Run the complete gate
+Updated 2026-09-16. Run from a built checkout:
 
 ```bash
 dotnet build Transpiler.slnx -c Release
 python3 tests/conformance.py
 ```
 
-The harness uses only Python's standard library. It runs external `dotnet` and `node` processes with a timeout. The .NET oracle runs with invariant globalization; UTF-8 output is selected for the test environment. Test results are written to `artifacts/conformance/report.json`, with generated code, imported analyses, DLLs, portable PDBs, runtime configurations, diagnostics, and capability output alongside it.
+The Python harness uses only standard-library packages and launches dotnet, Node and Python child processes with timeouts. Tests write assemblies, PDBs, generated code, analyses, manifests and a machine-readable report under `artifacts/conformance`. Globalization is invariant in the oracle; UTF-8 is selected for test I/O.
 
-A successful process exit from the harness requires every recorded case to pass. Build errors stop the CI job before conformance. Tests are unconditional; the workflow does not skip the gate when its script is missing.
+## What the 71-case gate contains
 
-## Test topology
+There are 52 ordinary/BCL Release/Debug console configurations, eight negative fixtures, library ABI and malformed PE checks, and nine extended checks. Each ordinary/BCL configuration executes the same DLL under CoreCLR and compiles those bytes to both target languages: 104 generated console executions. The logical-heap Release/Debug extended cases add four generated console executions. Other extended ABI/graph cases execute additional programs.
 
-```text
-                       ┌─ CoreCLR execution ───── stdout + exit ───┐
-C# ─ Roslyn ─ same DLL ┼─ JS compilation ─ Node ─ stdout + exit ──┼─ equality
-                       └─ Python compilation ─── stdout + exit ───┘
+The nine extended gates are definite local assignment, original CoreLib catalog, JavaScript liveness barrier, logical heap Release, logical heap Debug, three-assembly linking, portable BCL provenance, host async/root ABI, and portable rejection boundaries. A harness case can contain many assertions; counts are not opcode/BCL compatibility percentages.
 
-same DLL ─ repeat target compilation ─ byte equality
-unsupported source ─ target compilation ─ diagnostics + no new target artifact
-```
+## Differential protocol
 
-Every console fixture is compiled in Release and Debug. This matters because Debug locals/branches and Release lowering patterns stress different instruction forms. The `Arguments` fixture also checks a nonzero successful application exit code (7), so the oracle does not assume all correct programs return zero.
+Each positive console fixture is emitted once per source optimization mode. Its CoreCLR stdout and process exit status are the oracle. Both target programs must match. Repeat compilation must produce byte-identical source. Ordinary test output is not normalized to hide discrepancies. The Arguments program returns 7 deliberately, so success is not equated with exit zero in every application.
 
-The sample library exercises both source compilation and host invocation. JavaScript passes 64-bit arguments as BigInt; Python passes exact integers. Signature-qualified and unambiguous short export names are supported.
+Library/host checks cover supported primitive/string/Boolean/Int64 values, cooperative task results and faults, pending-task budget failure, root retention/release and stale-handle rejection. General host-object/byref/callback transport is not certified by these tests.
 
-## Corpus inventory
+Negative programs must fail with Transpiler diagnostics without producing a new target file. Portable boundary tests include forced collection, finalizer waits, resurrection-tracking weak references, thread-pool/timer APIs, unsupported collection members and reflection. Importing a reference assembly as an executable implementation is not a valid fallback.
 
-`tests/programs` contains arithmetic boundaries, recursive/control-flow programs, class dispatch and boxing, managed reference aliasing, checked arrays, UTF-16/identity-sensitive string operations, nested exception/finally/rethrow behavior, static initialization failure, floating point, and command-line arguments. `samples/Hello.cs` is also a differential fixture.
+## Evidence specific to the new runtime/BCL work
 
-`tests/negative` covers generic methods, unlinked library calls, filters, structs, delegates, Single, reflection, interface calls, unchecked floating conversion, RVA-backed constant-array initialization, implicit external virtual overrides, and finalization. Rejection is part of the contract, not a disabled test.
+`tests/bcl/OriginalMath.cs` reaches all 21 reviewed original CoreLib integer methods. The provenance gate requires those methods to appear as real emitted bodies and rejects Math intrinsic substitution in that fixture. It also checks the upstream notice. Separate portable-library provenance proves emitted algorithms originate in Transpiler.Bcl.
 
-The machine-readable report is the source of truth for case counts. One harness case can contain multiple target compilations/executions. Do not confuse a case count with opcode coverage or the number of individual assertions.
+`tests/CompilerChecks` is a package-free C# executable with 11 hand-authored normalized IL control-flow shapes. It checks must-assignment at joins and loops, address acquisition, unreachable code, InitLocals and conservative exceptional-region rejection. This is a targeted proof regression suite, not a complete verifier audit.
 
-## Artifacts and evidence
+`tests/runtime/LogicalHeap.cs` checks logical ownership, generation/stale-reference behavior, explicit roots, weak clearing, cycles, quotas, bounds and accounting. Twenty deterministic randomized graph rounds are checked against an independent integer-index reachability oracle. This matters because three executions of the same incorrect collector could otherwise agree. The primary heap performs 963 allocations per fixture run; smaller auxiliary heaps exercise edge cases.
 
-GitHub Actions publishes `transpiler-build-and-conformance` containing the framework-dependent compiler, source archive, generated target programs, and test reports. Artifacts have the hosting service's retention policy; archive important reports for release provenance. The generated programs can be copied to a machine with Node/Python and **without .NET**.
+The JavaScript liveness test instruments the WeakRef barrier operation and removes the host capability to verify explicit failure. It does not assert when a real collector reclaims an object. The logical graph collector has deterministic explicit collection; the ordinary host heap does not acquire that contract.
 
-The first green baseline, commit `ae6d8511584ebabf09befdb838f1a1dc803c7494`, passed 34 cases under SDK 10.0.401, Node 22.23.2, and Python 3.13.15 on Linux x64. Its 44 generated console programs were also executed independently under Node 22.16.0/Python 3.13.5 in an environment with no `dotnet` executable; stdout and exit codes matched the stored oracle. This is a point-in-time evidence record, not a promise about all future environments.
+## Filtered development runs
 
-## Bugs caught during the initial implementation
+`TRANSPILER_TEST_FILTER` selects case names for local development. A filtered green report is not a complete gate. CI explicitly clears the filter. When reporting conformance, preserve the report's environment, complete case list and commit rather than quoting a filtered result as full success.
 
-The tests exposed a Python evaluation-order bug: accessing `array.data` before calling the null-check helper raised a Python AttributeError instead of the managed NullReferenceException. The load now checks first.
+## Observed environments and artifacts
 
-An identity test exposed full-range `Substring` allocating a new wrapper rather than returning the original string. UTF-16 split-surrogate reconstruction also required normalization in the Python representation, while preserving isolated code units for slicing.
+The full 71-case gate passed locally with SDK 10.0.100, Node 22.16.0 and Python 3.13.5. CI at commit c45129cfe524e7ddca2239d36c7247dd2614ccde passed the same gate with SDK 10.0.401, Node 22.23.2 and Python 3.13.15 on Linux x64. The downloaded source archive's commit comment was checked against that commit, and the report was inspected directly. See [validation](validation-summary.md).
 
-The integer oracle exposed the CoreCLR x64 `minSigned % -1` overflow edge. The fixture now catches that exception, and both runtimes implement the explicitly selected profile behavior. The official `OpCodes.Rem` documentation is linked in the specification. This illustrates why the reference is a declared runtime/profile rather than an assumed platform-independent mathematical result.
+GitHub Actions uploads the compiler, generated programs, manifests, reports, source snapshot and applicable notices. The source ZIP identifies its exact commit. Preserve artifacts needed for release provenance before their hosting retention expires. A later documentation-only commit is not a change to the tested compiler, but the latest commit's own CI remains the branch gate.
 
-## Adding a semantic feature
+## Remaining qualification
 
-Add a minimal positive fixture and error/boundary cases before changing capability declarations. Exercise both Release/Debug code generation and both targets. Include aliasing, identity, exception timing, and initialization effects where relevant. Add negative cases for adjacent combinations that remain unsupported.
-
-Do not modify expected output to hide a backend discrepancy. The ordinary expected output comes from the same emitted DLL under the declared .NET oracle. An intentional profile difference must be documented explicitly and tested separately, not normalized away by a global output filter.
-
-## Next test infrastructure
-
-The next gates should add hand-authored IL for fault clauses, invalid region transfers, prefix combinations, malformed signatures, and verifier edge cases; property-based numeric and CFG generation; reference-implementation cross-checking of intrinsic signatures; explicit emitted-opcode coverage; reflection/delegate/generic stress cases as those layers are implemented; and Windows/macOS/ARM64/browser matrices.
-
-Performance belongs in a separate benchmark suite: compile time, peak memory, source size, startup, hot loops, allocations, calls, exceptions, and realistic workloads. The current conformance suite is not a performance benchmark.
+Expand hand-authored IL and hostile metadata tests; exception-region/byref verification; property-based numeric/type/dispatch tests; Windows/macOS/ARM64/browser matrices; scheduler/context/reentrancy tests; memory-pressure/liveness tests without timing assumptions; and performance benchmarks. Measure startup, output size, allocation, runtime throughput and compilation resources separately from compatibility.

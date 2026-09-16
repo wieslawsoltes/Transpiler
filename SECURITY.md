@@ -1,11 +1,13 @@
 # Security scope
 
-Transpiler is an initial compiler/runtime PoC, not a sandbox or a complete CLI verifier. Do not expose it directly as an unrestricted public code-execution service.
+Transpiler is a compiler/runtime research implementation, not a complete CLI verifier or a security sandbox. Do not expose unrestricted compilation or generated-code execution directly to untrusted users.
 
-The PE importer does not load or execute the submitted assembly. However, malicious or very large metadata can still attack resource usage or unimplemented validation boundaries. Compilation needs OS-level isolation, input limits, time/memory budgets, and a constrained output directory when inputs are untrusted.
+The importer reads PE metadata and IL without loading the submitted assembly for execution. Nonetheless, malicious/large metadata, recursive types, specialization graphs and source-emission edge cases can attack resources or unimplemented validation boundaries. Use separate restricted processes, bounded input/output directories, CPU/time/memory limits and no ambient credentials.
 
-Generated programs are executable code. Their current profile has limited host integrations, but that is not a security guarantee. Execute untrusted output in a separate restricted process/container, with no credentials or sensitive filesystem access. Host callbacks supplied through the output/module ABI are trusted application code.
+Assembly identity checks detect binding conflicts; they do not authenticate publishers. Reference-assembly filtering, stack analysis and definite local assignment are useful functional validations, not proof of complete type safety or hostile-input acceptance equivalence with CoreCLR.
 
-The initial implementation does not guarantee bounded recursion, managed StackOverflowException behavior, exact out-of-memory recovery, hostile metadata acceptance/rejection equivalence with the CLR, or protection against every source-emission edge case. The test suite is a functional conformance corpus, not a security audit.
+Generated code is executable code. Host output callbacks and application-supplied objects are trusted code/data integrations, not isolation boundaries. The cooperative task pump budget counts iterations and cannot interrupt an infinite managed call. Timeout of a host adapter does not cancel the underlying translated task.
 
-Future filesystem/network/native/dynamic-code adapters must declare capabilities explicitly and must not be silently enabled by a backend. See the hardening milestones in docs/implementation-plan.md.
+Default runtime root handles and logical-heap handles express ownership only; they are not authorization tokens. The logical heap validates its own address ownership/generations, but it is not a native memory protection mechanism or the default generated-object collector. Its quotas cover logical payload/reference/table capacities, not total process memory, host frame allocations or execution time.
+
+Forced collection, finalizers, resurrection, pinning, native calls and broad I/O/threading capabilities are not implicitly enabled. Future adapters must declare their capability, lifetime and trust contracts explicitly. Add hostile metadata fuzzing, full region/byref verification, cancellation/resource controls and host matrices before production exposure.

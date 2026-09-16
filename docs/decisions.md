@@ -1,37 +1,43 @@
-# Architecture decision records
+# Architecture decisions
 
-## ADR-001: PE/CIL is the canonical compatibility input — accepted
+Updated 2026-09-16. Historical initial decisions are preserved in [0.1](history/0.1/decisions.md).
 
-Use Roslyn to produce a real assembly, then import PE metadata and CIL. This allows existing DLL input and prevents duplicated C# syntax handling in every backend. A future source-semantic sidecar may improve diagnostics/optimization, but must not become necessary for correctness.
+## ADR-001 — Real PE/CIL remains canonical: accepted
 
-Alternative rejected as the sole engine: direct C# syntax substitution. It does not cover arbitrary compiler-produced assemblies and tempts each backend to reimplement source lowering independently.
+Roslyn supplies C# compilation; the shared engine imports the actual emitted assembly. Existing DLL input must not require reconstructed source. Source-specific recognition can improve optimization/provenance but cannot be the only correctness path.
 
-## ADR-002: Runtime services are explicit — accepted
+## ADR-002 — Library origin is explicit: accepted
 
-Standalone means no original CLR process or dynamically downloaded managed runtime at application execution. It does not mean that integer-width semantics, boxing, managed references, string identity, or exceptions disappear. Bundle small target-language implementations and expose their profile limitations.
+Distinguish original implementation IL, original portable managed algorithms and target runtime primitives. Reference assemblies supply contracts only. Manifests identify inputs and emitted bodies. Exact unsupported members fail; no same-name or hidden CLR fallback is allowed.
 
-Alternative rejected: silent CLR/Python.NET/Wasm fallback. An explicit future hosted profile can be useful but must be a separate deliverable.
+## ADR-003 — Closed-world specialization is bounded: accepted for current profile
 
-## ADR-003: Conservative source dispatch before optimization — accepted for MVP
+Preserve constructed identities, generic statics and storage semantics. Add explicit host roots before pruning methods called from adapters. Reject expansion/open-instantiation requirements beyond the profile rather than silently erasing types. General sharing, dynamic loading and complete constraints remain separate work.
 
-Emit statically known method bodies using control-flow dispatchers and explicit evaluation stacks. This handles general branch shapes and provides a readable correctness baseline without pretending an SSA optimizer already exists.
+## ADR-004 — Verify nonzeroed locals rather than forbid or approximate them: accepted
 
-Consequence: generated source is larger and slower than a mature optimized compiler may achieve. Preserve the baseline when adding block coalescing, SSA, structured source, or fast numeric lowering.
+Normal-flow must-assignment permits useful real BCL bodies without accepting uninitialized reads. Intersect predecessor facts, including loop-entry paths. Reject unproven address and exceptional-flow initialization. Keep this targeted proof separate from claims of full ECMA verification.
 
-## ADR-004: Capability rejection is a product behavior — accepted
+## ADR-005 — Conservative source backend remains an oracle: accepted
 
-Unknown reachable opcodes, unsupported types, unlinked methods, and known implicit runtime obligations must fail before new target output. Track exact library signatures, not method-name guesses. Some import shapes are conservatively rejected even when unused.
+Static control-flow dispatch handles general branches without runtime IL decoding. Preserve it when adding HIR/CFG/SSA and target fast paths. Performance/source-idiomaticity are not evidence of semantic correctness.
 
-Consequence: compiling a modern C# source successfully with Roslyn does not guarantee its emitted library/runtime dependencies fit the profile. This is preferable to silently incorrect generated programs.
+## ADR-006 — Default host heap and logical collector stay separate: accepted
 
-## ADR-005: Exception filters need a two-pass protocol — accepted
+Use JS/Python objects for ordinary generated storage. The transpilable C# LogicalHeap is an explicit algorithm library with its own payload/root contract, not an installed replacement for all managed allocations. Compiler stack maps, safepoints, barriers and interior roots are prerequisites for a broader collector profile.
 
-Do not substitute a host catch predicate after the stack has already unwound. Preserve the CLI search-before-unwind model through future managed frame metadata/shadow-stack support. Reject filters until that mechanism exists.
+## ADR-007 — Liveness must use a defined host mechanism: accepted
 
-## ADR-006: C++ has separate native and managed profiles — proposed
+An empty JavaScript helper is not a specified KeepAlive barrier. Use the ECMAScript kept-alive mechanism and reject unavailable host support. Do not expose forced collection, finalization, resurrection or pinning as no-op implementations.
 
-Plan a restricted `native-std` target and a broader `cpp-managed` target. Standard-library-only dependencies are not equivalent to absence of managed runtime services. Heap cycles, interior references, weak references, finalization, and type identity must have an explicit policy.
+## ADR-008 — Cooperative async is a declared scheduling profile: accepted
 
-## ADR-007: Test one assembly against two targets and an oracle — accepted
+Execute actual Roslyn state machines against translated managed builders and a FIFO scheduler. Promise/asyncio adapters drive that queue; they do not establish thread-pool/context/timer equivalence. Unsupported scheduling APIs remain diagnostics. Pump-step budgets do not replace process execution limits.
 
-Compile each fixture once per source optimization mode, execute it with CoreCLR, and compile those same bytes to JavaScript and Python. Compare output/exit and re-emission determinism. Include rejection gates and host ABI checks. A green suite is measured evidence for the corpus, not a universal conformance certificate.
+## ADR-009 — Exception filters require search-before-unwind: accepted
+
+Do not approximate cross-frame filters with predicates after the host stack has unwound. Retain explicit rejection until a two-pass managed-frame protocol and region verification are implemented.
+
+## ADR-010 — Native source profiles have different runtime obligations: proposed
+
+Keep a restricted standard-library ownership C++ profile distinct from managed C++ output with collector/runtime services. Reusing a native collector requires its execution-engine contract, not merely linking a library. Neither C++ target is implemented here.
