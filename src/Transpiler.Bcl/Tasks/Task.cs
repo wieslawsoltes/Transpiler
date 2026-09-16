@@ -54,7 +54,7 @@ public partial class Task
         return Finish(2, error);
     }
     internal void SetAsyncException(Exception error)
-    { if (error == null) throw new ArgumentNullException(nameof(error)); Finish(error is OperationCanceledException ? 3 : 2, error); }
+    { if (error == null) throw new ArgumentNullException(nameof(error)); if (error is OperationCanceledException canceled) Cancellation = canceled.CancellationToken; Finish(error is OperationCanceledException ? 3 : 2, error); }
     internal void WaitCompletion()
     {
         int budget = 100000;
@@ -68,7 +68,7 @@ public partial class Task
     }
 }
 
-public class Task<T> : Task
+public partial class Task<T> : Task
 {
     private T _result = default!;
     internal bool Complete(T result)
@@ -79,7 +79,7 @@ public class Task<T> : Task
     public new ConfiguredTaskAwaitable<T> ConfigureAwait(bool continueOnCapturedContext) => new ConfiguredTaskAwaitable<T>(this);
 }
 
-public sealed class TaskCompletionSource<T>
+public sealed partial class TaskCompletionSource<T>
 {
     private readonly Task<T> _task = new Task<T>();
     public Task<T> Task => _task;
@@ -92,7 +92,7 @@ public sealed class TaskCompletionSource<T>
     public bool TrySetException(IEnumerable<Exception> exceptions) => _task.FailSequence(exceptions);
     public void SetException(IEnumerable<Exception> exceptions)
     { if (!TrySetException(exceptions)) throw new InvalidOperationException("The task is already complete."); }
-    public bool TrySetCanceled() => _task.Finish(3, new System.Threading.Tasks.TaskCanceledException());
+    public bool TrySetCanceled() => _task.Finish(3, new TaskCanceledException());
     public void SetCanceled()
     { if (!TrySetCanceled()) throw new InvalidOperationException("The task is already complete."); }
 }

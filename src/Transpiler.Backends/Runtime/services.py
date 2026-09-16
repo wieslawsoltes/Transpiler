@@ -12,6 +12,7 @@ class CliWeak(CliObject):
 class HostedRuntime(ManagedRuntime):
     def __init__(self, metadata, write=None):
         super().__init__(metadata, write)
+        self.parents['System.ObjectDisposedException'] = 'System.InvalidOperationException'
         self._identity_hashes = _weakref.WeakKeyDictionary()
         self._next_hash = 1
         self._roots, self._next_root = {}, 1

@@ -9,6 +9,7 @@ class CliWeak extends CliObject {
 class HostedRuntime extends ManagedRuntime {
     constructor(metadata, write = null) {
         super(metadata, write);
+        this.parents['System.ObjectDisposedException'] = 'System.InvalidOperationException';
         this.identityHashes = new WeakMap(); this.nextHash = 1;
         this.roots = new Map(); this.nextRoot = 1;
     }

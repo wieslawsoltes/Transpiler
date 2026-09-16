@@ -6,7 +6,7 @@ public static class IntrinsicCatalog
     public static readonly string[] ExceptionTypes = ["System.Exception", "System.SystemException", "System.ArithmeticException",
         "System.DivideByZeroException", "System.OverflowException", "System.NullReferenceException", "System.IndexOutOfRangeException",
         "System.ArrayTypeMismatchException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentOutOfRangeException",
-        "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
+        "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.ObjectDisposedException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
     private static readonly IReadOnlyDictionary<string, string> Entries = Build();
     public static string? Find(MethodReference method, AssemblyModel? image = null)
     {
