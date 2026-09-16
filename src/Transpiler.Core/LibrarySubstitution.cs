@@ -11,7 +11,17 @@ public static class LibrarySubstitution
         ["[Transpiler.Bcl]Transpiler.Bcl.List`1"] = "System.Collections.Generic.List`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.Queue`1"] = "System.Collections.Generic.Queue`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.Stack`1"] = "System.Collections.Generic.Stack`1",
-        ["[Transpiler.Bcl]Transpiler.Bcl.Enumerable"] = "System.Linq.Enumerable"
+        ["[Transpiler.Bcl]Transpiler.Bcl.Enumerable"] = "System.Linq.Enumerable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.Task"] = "System.Threading.Tasks.Task",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.Task`1"] = "System.Threading.Tasks.Task`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.TaskCompletionSource`1"] = "System.Threading.Tasks.TaskCompletionSource`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.TaskAwaiter"] = "System.Runtime.CompilerServices.TaskAwaiter",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.TaskAwaiter`1"] = "System.Runtime.CompilerServices.TaskAwaiter`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.YieldAwaitable"] = "System.Runtime.CompilerServices.YieldAwaitable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ConfiguredTaskAwaitable"] = "System.Runtime.CompilerServices.ConfiguredTaskAwaitable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.ConfiguredTaskAwaitable`1"] = "System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.AsyncTaskMethodBuilder"] = "System.Runtime.CompilerServices.AsyncTaskMethodBuilder",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.AsyncTaskMethodBuilder`1"] = "System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1"
     };
 
     public static AssemblyModel Apply(AssemblyModel input)
@@ -19,7 +29,7 @@ public static class LibrarySubstitution
         string Type(string value)
         {
             // Application type names are assembly-qualified: a user-defined System.* name cannot enter this policy.
-            foreach (var entry in Types) value = value.Replace(entry.Key, entry.Value, StringComparison.Ordinal);
+            foreach (var entry in Types.OrderByDescending(e => e.Key.Length)) value = value.Replace(entry.Key, entry.Value, StringComparison.Ordinal);
             return value;
         }
         bool Replaced(string owner) => Types.Values.Any(t => owner == t || owner.StartsWith(t + "<", StringComparison.Ordinal) || owner.StartsWith(t + "+", StringComparison.Ordinal));

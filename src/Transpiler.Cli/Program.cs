@@ -28,7 +28,7 @@ internal static class Program
                 {
                     schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" },
                     opcodes = CompilerAnalysis.SupportedOpcodes, intrinsics = IntrinsicCatalog.All,
-                    limitations = new[] { "single input assembly", "no generics/value-type layouts/interfaces/delegates/async", "no reflection or native interop", "no exception filters", "not a security verifier" }
+                    limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "no reflection or native interop", "no exception filters", "not a security verifier" }
                 }, Json);
                 if (options.Output is null) Console.WriteLine(text); else Write(options.Output, text);
                 return 0;
@@ -44,7 +44,7 @@ internal static class Program
                 var files = options.Inputs.Select(p => new SourceFile(Path.GetFileName(p), File.ReadAllText(p, Encoding.UTF8))).ToArray();
                 if (files.Select(f => f.Path).Distinct(StringComparer.Ordinal).Count() != files.Length)
                     throw new ArgumentException("Source file names must be unique within one compilation.");
-                managed = RoslynFrontend.Compile(files, Path.GetFileNameWithoutExtension(options.Inputs[0]), options.Library, !options.Debug, options.References);
+                managed = RoslynFrontend.Compile(files, Path.GetFileNameWithoutExtension(options.Inputs[0]), options.Library, !options.Debug, options.References, options.ReferencePack);
                 image = managed.Pe;
             }
             else image = File.ReadAllBytes(options.Inputs[0]);
@@ -68,6 +68,8 @@ internal static class Program
                 if (options.Output is null) Console.WriteLine(text); else Write(options.Output, text);
                 return 0;
             }
+            assembly = PortableCompilation.Link(assembly, options.References,
+                new LinkOptions(options.Bcl, options.ReferencePack, options.CoreLibrary));
             var analysis = CompilerAnalysis.Analyze(assembly);
             if (options.Command == "analyze")
             {
@@ -85,6 +87,15 @@ internal static class Program
             var destination = RequireOutput(options);
             if (options.IrOutput is not null) Write(options.IrOutput, JsonSerializer.Serialize(analysis, Json));
             Write(destination, generated.Text);
+            if (options.Manifest is not null) Write(options.Manifest, JsonSerializer.Serialize(new
+            {
+                schema = 2, target = target.ToString(), bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
+                assemblies = assembly.Inputs, referencePack = managed?.ReferencePack?.Inputs,
+                transpiled = analysis.Methods.Where(m => m.Method.Instructions.Length != 0)
+                    .Select(m => new { assembly = m.Method.Reference.Assembly, method = m.Method.Key, instructions = m.Method.Instructions.Length }),
+                intrinsics = analysis.Methods.SelectMany(m => m.Method.Instructions).Select(i => i.Operand).OfType<MethodReference>()
+                    .Where(m => analysis.Assembly.Resolve(m) is null).Select(m => new { method = m.Key, binding = IntrinsicCatalog.Find(m, analysis.Assembly) }).Distinct()
+            }, Json));
             if (options.Diagnostics is not null) Write(options.Diagnostics, "[]\n");
             Console.WriteLine(JsonSerializer.Serialize(new { output = destination, target = target.ToString(), generated.MethodCount, generated.InstructionCount, bytes = Encoding.UTF8.GetByteCount(generated.Text), profile = "portable-mvp" }));
             return 0;
@@ -133,6 +144,13 @@ internal static class Program
                 case "--ir": options.IrOutput = Value(); break;
                 case "--diagnostics": options.Diagnostics = Value(); break;
                 case "--reference": case "-r": options.References.Add(Value()); break;
+                case "--bcl":
+                    var bcl = Value();
+                    if (bcl is not ("portable" or "none")) throw new ArgumentException("--bcl must be portable or none.");
+                    options.Bcl = bcl == "portable"; break;
+                case "--reference-pack": options.ReferencePack = Value(); break;
+                case "--corelib": options.CoreLibrary = Value(); break;
+                case "--manifest": options.Manifest = Value(); break;
                 case "--library": options.Library = true; break;
                 case "--debug": options.Debug = true; break;
                 default:
@@ -151,6 +169,10 @@ internal static class Program
         public string? Target { get; set; }
         public string? IrOutput { get; set; }
         public string? Diagnostics { get; set; }
+        public bool Bcl { get; set; }
+        public string? ReferencePack { get; set; }
+        public string? CoreLibrary { get; set; }
+        public string? Manifest { get; set; }
         public bool Library { get; set; }
         public bool Debug { get; set; }
     }
@@ -164,7 +186,8 @@ internal static class Program
         dotnet Transpiler.Cli.dll capabilities [--out capabilities.json]
 
         Options: --library, --debug, --reference path.dll (repeatable),
-                 --ir analysis.json, --diagnostics diagnostics.json
+                 --ir analysis.json, --diagnostics diagnostics.json, --manifest provenance.json,
+                 --bcl portable|none, --reference-pack directory, --corelib implementation.dll
 
         C# compilation requires .NET 10 / Roslyn. Generated .mjs and .py programs do not.
         portable-mvp is an explicit subset, not universal CLI or .NET library compatibility.

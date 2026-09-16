@@ -50,6 +50,7 @@ public static partial class GenericSpecializer
         var external = new Dictionary<string, MethodReference>(StringComparer.Ordinal);
         var virtualCalls = new Dictionary<string, MethodReference>(StringComparer.Ordinal);
         var instantiatedVirtuals = new HashSet<string>(StringComparer.Ordinal);
+        var arrays = new HashSet<string>(StringComparer.Ordinal);
         var typeTemplates = input.Types.ToDictionary(t => t.Name, StringComparer.Ordinal);
         var methodTemplates = input.Methods.GroupBy(m => (m.Reference.Assembly, m.Reference.Type))
             .ToDictionary(g => g.Key, g => g.ToArray());
@@ -60,7 +61,8 @@ public static partial class GenericSpecializer
         {
             Budget(name.Length > 4096, "Generic type identity exceeds the 4096-character expansion budget.");
             if (name.EndsWith('&') || name.EndsWith('*')) return CloseType(name[..^1]) + name[^1];
-            if (name.EndsWith("[]", StringComparison.Ordinal)) return CloseType(name[..^2]) + "[]";
+            if (name.EndsWith("[]", StringComparison.Ordinal))
+            { var array = CloseType(name[..^2]) + "[]"; arrays.Add(array); return array; }
             var (definition, arguments) = Split(name);
             if (arguments.Length > 0)
             {
@@ -136,6 +138,7 @@ public static partial class GenericSpecializer
             : input.Methods.Where(m => m.Reference.Assembly == input.RootAssembly && m.IsPublic && m.IsStatic &&
                 m.Reference.Name != ".cctor" && m.Reference.GenericArity == 0 && input.FindType(m.Reference.Type)?.GenericArity == 0).ToArray();
         var exports = roots.Select(m => Bind(m.Reference)).ToArray();
+        var hostRoots = new HashSet<string>(StringComparer.Ordinal);
         var changed = true;
         while (changed)
         {
@@ -168,16 +171,48 @@ public static partial class GenericSpecializer
                     Reference = work.Closed, Locals = work.Template.Locals.Select(T).ToArray(), Instructions = instructions,
                     Exceptions = work.Template.Exceptions.Select(e => e with { CatchType = e.CatchType is null ? null : T(e.CatchType) }).ToArray()
                 };
+                foreach (var i in instructions.Where(i => i.Op == "newarr")) arrays.Add((string)i.Operand! + "[]");
                 foreach (var i in instructions.Where(i => i.Op is "callvirt" or "ldvirtftn"))
                 {
                     var call = (MethodReference)i.Operand!;
                     virtualCalls[Key(call)] = call;
                 }
             }
+            // Host-dispatched array enumeration must participate in closed-world reachability.
+            const string arrayEnumerator = "[Transpiler.Bcl]Transpiler.Bcl.ArrayEnumerator`1";
+            if (typeTemplates.ContainsKey(arrayEnumerator))
+            {
+                var elements = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var call in virtualCalls.Values.Where(c => c.Name == "GetEnumerator").ToArray())
+                {
+                    var (contract, arguments) = Split(call.Type);
+                    if (contract == "System.Collections.Generic.IEnumerable`1" && arguments.Length == 1) elements.Add(arguments[0]);
+                    if (contract == "System.Collections.IEnumerable")
+                    { foreach (var array in arrays.ToArray()) elements.Add(array[..^2]); elements.Add("System.Char"); }
+                }
+                foreach (var element in elements)
+                {
+                    var closedType = CloseType(arrayEnumerator + "<" + element + ">");
+                    foreach (var constructor in input.Methods.Where(m => m.Reference.Type == arrayEnumerator && m.Reference.Name == ".ctor"))
+                        hostRoots.Add(Bind(constructor.Reference with { Type = closedType }).Key);
+                }
+            }
             foreach (var type in types.Values.ToArray())
             {
                 var (definition, arguments) = Split(type.Name);
                 if (!typeTemplates.TryGetValue(definition, out var template)) continue;
+                // The host async ABI is a real reachability root, independent of application calls.
+                if (definition is "System.Threading.Tasks.Task" or "System.Threading.Tasks.Task`1")
+                {
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == definition && m.Reference.Name == "GetAwaiter"))
+                        hostRoots.Add(Bind(member.Reference with { Type = type.Name }).Key);
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == "System.Threading.Tasks.Task" && m.Reference.Name == "get_IsCompleted" ||
+                        m.Reference.Type == "[Transpiler.Bcl]Transpiler.Bcl.Tasks.Scheduler" && m.Reference.Name == "RunOne"))
+                        hostRoots.Add(Bind(member.Reference).Key);
+                }
+                if (definition is "System.Runtime.CompilerServices.TaskAwaiter" or "System.Runtime.CompilerServices.TaskAwaiter`1")
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == definition && m.Reference.Name == "GetResult"))
+                        hostRoots.Add(Bind(member.Reference with { Type = type.Name }).Key);
                 string T(string value) => value == definition ? type.Name : CloseType(Substitute(value, arguments, []));
                 foreach (var cctor in input.Methods.Where(m => m.Reference.Type == definition && m.Reference.Name == ".cctor"))
                     Bind(cctor.Reference with { Type = type.Name });
@@ -203,6 +238,7 @@ public static partial class GenericSpecializer
         {
             EntryPoint = input.EntryPoint == 0 ? 0 : exports.Single().Token,
             ExportRoots = exports.Select(e => e.Key).ToArray(),
+            HostRoots = hostRoots.ToArray(),
             Types = types.Values.OrderBy(t => t.Name, StringComparer.Ordinal).ToArray(),
             Fields = fields.Values.OrderBy(f => f.Reference.Key, StringComparer.Ordinal).ToArray(),
             Methods = methods.Values.OrderBy(m => m.Token).ToArray()
