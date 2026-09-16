@@ -6,4 +6,7 @@
     <Project Path="src/Transpiler.Backends/Transpiler.Backends.csproj" />
     <Project Path="src/Transpiler.Cli/Transpiler.Cli.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CompilerChecks/CompilerChecks.csproj" />
+  </Folder>
 </Solution>
