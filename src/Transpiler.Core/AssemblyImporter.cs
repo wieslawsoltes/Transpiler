@@ -7,10 +7,12 @@ using System.Reflection.PortableExecutable;
 
 namespace Transpiler.Core;
 
+/// <summary>Imports CLI metadata and CIL without loading the input into the compiler's CLR.</summary>
 public static class AssemblyImporter
 {
     public static AssemblyModel Read(byte[] image)
     {
+        ArgumentNullException.ThrowIfNull(image);
         try
         {
             using var stream = new MemoryStream(image, writable: false);
@@ -18,7 +20,7 @@ public static class AssemblyImporter
             if (!pe.HasMetadata || pe.PEHeaders.CorHeader is not { } cor)
                 throw new BadImageFormatException("A managed PE/CLI assembly is required.");
             if ((cor.Flags & CorFlags.ILOnly) == 0 || (cor.Flags & CorFlags.NativeEntryPoint) != 0)
-                throw new CompilationException(new("TR1002", "Mixed-mode/native-entry assemblies are not supported by the portable profile."));
+                throw new CompilationException(new Diagnostic("TR1002", "Mixed-mode/native-entry assemblies are not supported by the portable profile."));
             var reader = pe.GetMetadataReader();
             if (!reader.IsAssembly) throw new BadImageFormatException("Standalone netmodules are not supported.");
             var provider = new Signatures(reader);
@@ -70,7 +72,7 @@ public static class AssemblyImporter
                 OperandType.InlineMethod => Method(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineField => Field(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineType => provider.TypeName(MetadataTokens.EntityHandle(token)),
-                _ => token // Unsupported signatures/tokens stay visible for capability diagnostics.
+                _ => token
             };
             var types = new List<TypeDefinitionModel>();
             var methods = new List<MethodDefinitionModel>();
@@ -80,6 +82,9 @@ public static class AssemblyImporter
                 var type = reader.GetTypeDefinition(handle);
                 var typeName = provider.TypeName(handle);
                 var baseName = type.BaseType.IsNil ? null : provider.TypeName(type.BaseType);
+                // Until MethodImpl maps are modeled, rejecting these assemblies prevents incorrect explicit-interface/covariant dispatch.
+                if (type.GetMethodImplementations().Count != 0)
+                    throw new CompilationException(new Diagnostic("TR1010", $"Type '{typeName}' uses MethodImpl overrides, which are outside portable-mvp."));
                 types.Add(new(typeName, baseName, (type.Attributes & TypeAttributes.Interface) != 0,
                     baseName is "System.ValueType" or "System.Enum", (type.Attributes & TypeAttributes.BeforeFieldInit) != 0,
                     type.GetGenericParameters().Count, type.GetInterfaceImplementations().Select(i =>
@@ -87,7 +92,6 @@ public static class AssemblyImporter
                 foreach (var f in type.GetFields())
                 {
                     var definition = reader.GetFieldDefinition(f);
-                    // Literal constants are represented, but field-RVA storage is deliberately not materialized.
                     fields.Add(new(Field(f), (definition.Attributes & FieldAttributes.Static) != 0,
                         (definition.Attributes & FieldAttributes.Literal) != 0, null));
                 }
@@ -95,6 +99,8 @@ public static class AssemblyImporter
                 {
                     var definition = reader.GetMethodDefinition(m);
                     var reference = Method(m);
+                    if (definition.DecodeSignature(provider, null).Header.CallingConvention == SignatureCallingConvention.VarArgs)
+                        throw new CompilationException(new Diagnostic("TR1011", "Vararg calling conventions are outside portable-mvp.", reference.Key));
                     var body = definition.RelativeVirtualAddress == 0 ? null : pe.GetMethodBody(definition.RelativeVirtualAddress);
                     var locals = body is null || body.LocalSignature.IsNil ? [] :
                         reader.GetStandaloneSignature(body.LocalSignature).DecodeLocalSignature(provider, null).ToArray();
@@ -112,7 +118,7 @@ public static class AssemblyImporter
         }
         catch (CompilationException) { throw; }
         catch (Exception e) when (e is BadImageFormatException or ArgumentException or InvalidOperationException or OverflowException or IndexOutOfRangeException)
-        { throw new CompilationException(new("TR1001", $"Invalid or unsupported PE/metadata: {e.Message}")); }
+        { throw new CompilationException(new Diagnostic("TR1001", $"Invalid or unsupported PE/metadata: {e.Message}")); }
     }
 
     private sealed class Signatures(MetadataReader reader) : ISignatureTypeProvider<string, object?>

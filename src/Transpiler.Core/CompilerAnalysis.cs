@@ -5,7 +5,7 @@ namespace Transpiler.Core;
 public sealed record MethodAnalysis(MethodDefinitionModel Method, IReadOnlyDictionary<int, string[]> StackBefore);
 public sealed record CompilationAnalysis(AssemblyModel Assembly, MethodAnalysis[] Methods, string[] Exports);
 
-/// <summary>Closed-world reachability, fail-closed capability checks and fixed-point evaluation-stack analysis.</summary>
+/// <summary>Closed-world reachability, explicit capabilities, and fixed-point evaluation-stack analysis; not a security verifier.</summary>
 public static class CompilerAnalysis
 {
     private static readonly HashSet<string> Supported = new(("nop ldarg ldarga starg ldloc ldloca stloc ldc.i4 ldc.i8 ldc.r8 ldc.r4 ldnull ldstr dup pop " +
@@ -33,7 +33,7 @@ public static class CompilerAnalysis
         var errors = new List<Diagnostic>(); var done = new HashSet<int>(); var queue = new Queue<MethodDefinitionModel>();
         var roots = image.EntryPoint != 0 ? image.Methods.Where(m => m.Token == image.EntryPoint).ToArray()
             : image.Methods.Where(m => m.IsPublic && m.IsStatic && m.Reference.Name is not ".cctor").ToArray();
-        if (roots.Length == 0) throw new CompilationException(new("TR2000", "No managed entry point or public static library exports were found."));
+        if (roots.Length == 0) throw new CompilationException(new Diagnostic("TR2000", "No managed entry point or public static library exports were found."));
         foreach (var root in roots) queue.Enqueue(root);
         var analyses = new List<MethodAnalysis>();
         void EnqueueType(string type)
@@ -58,6 +58,11 @@ public static class CompilerAnalysis
             Type(method.Reference.Type); Type(method.Reference.ReturnType);
             foreach (var type in method.Reference.Parameters.Concat(method.Locals)) Type(type);
             foreach (var field in image.Fields.Where(f => f.Reference.Type == method.Reference.Type)) Type(field.Reference.FieldType);
+            // External virtual slots require a runtime/BCL override bridge, not just same-name dispatch.
+            if (method.IsVirtual && !method.NewSlot && !image.Methods.Any(m => m.IsVirtual && m.Reference.Type != method.Reference.Type &&
+                IsDerivedFrom(image, method.Reference.Type, m.Reference.Type) && m.Reference.Name == method.Reference.Name &&
+                m.Reference.Parameters.SequenceEqual(method.Reference.Parameters)))
+                Error("TR2012", "Overriding an external virtual slot is not implemented by portable-mvp.");
             EnqueueType(method.Reference.Type);
             foreach (var clause in method.Exceptions)
             {
@@ -77,15 +82,19 @@ public static class CompilerAnalysis
                         queue.Enqueue(target); EnqueueType(call.Type);
                         if (i.Op == "callvirt" && target.IsVirtual)
                             foreach (var candidate in image.Methods.Where(m => m.IsVirtual && m.Reference.Name == call.Name &&
-                                m.Reference.Parameters.SequenceEqual(call.Parameters) && IsDerivedFrom(image, m.Reference.Type, call.Type)))
-                                queue.Enqueue(candidate);
+                                m.Reference.Parameters.SequenceEqual(call.Parameters) && IsDerivedFrom(image, m.Reference.Type, call.Type))) queue.Enqueue(candidate);
                     }
                     else if (IntrinsicCatalog.Find(call) is null) Error("TR2002", $"No intrinsic or linked implementation for '{call.Assembly}:{call.Key}->{call.ReturnType}'.", i.Offset);
                 }
                 if (i.Operand is FieldReference field)
                 {
                     Type(field.FieldType, i.Offset); EnqueueType(field.Type);
-                    if (image.Resolve(field) is null) Error("TR2007", $"External field '{field.Key}' is not linked.", i.Offset);
+                    if (image.Resolve(field) is not { } definition) Error("TR2007", $"External field '{field.Key}' is not linked.", i.Offset);
+                    else if (definition.IsLiteral || definition.IsStatic != i.Op.StartsWith("lds", StringComparison.Ordinal) && definition.IsStatic != i.Op.StartsWith("sts", StringComparison.Ordinal))
+                    {
+                        var staticAccess = i.Op is "ldsfld" or "stsfld" or "ldsflda";
+                        if (definition.IsLiteral || definition.IsStatic != staticAccess) Error("TR2008", "Literal field access or field storage-kind mismatch.", i.Offset);
+                    }
                 }
                 if (i.Code.OperandType == OperandType.InlineType && i.Operand is string typeName) Type(typeName, i.Offset);
             }
@@ -134,9 +143,11 @@ public static class CompilerAnalysis
     private static IReadOnlyDictionary<int, string[]> Verify(MethodDefinitionModel method)
     {
         var instructions = method.Instructions.ToDictionary(i => i.Offset);
+        var end = method.Instructions[^1].NextOffset;
         var states = new Dictionary<int, string[]>(); var work = new Queue<int>();
         var args = method.IsStatic ? method.Reference.Parameters : new[] { method.Reference.Type }.Concat(method.Reference.Parameters).ToArray();
-        void Fail(string message, int offset) => throw new CompilationException(new("TR2100", message, method.Key, offset));
+        void Fail(string message, int offset) => throw new CompilationException(new Diagnostic("TR2100", message, method.Key, offset));
+        bool Boundary(int offset) => offset == end || instructions.ContainsKey(offset);
         void Merge(int offset, string[] stack)
         {
             if (!instructions.ContainsKey(offset)) Fail("Control flow targets a non-instruction boundary.", offset);
@@ -149,7 +160,7 @@ public static class CompilerAnalysis
         Merge(0, []);
         foreach (var c in method.Exceptions)
         {
-            if (!instructions.ContainsKey(c.TryStart) || c.TryEnd <= c.TryStart || c.HandlerEnd <= c.HandlerStart)
+            if (!instructions.ContainsKey(c.TryStart) || !Boundary(c.TryEnd) || !Boundary(c.HandlerEnd) || c.TryEnd <= c.TryStart || c.HandlerEnd <= c.HandlerStart)
                 Fail("Invalid exception region boundaries.", c.TryStart);
             Merge(c.HandlerStart, c.Kind == "Catch" ? ["o"] : []);
         }
@@ -185,6 +196,8 @@ public static class CompilerAnalysis
             else if (Conversions.Contains(op))
             {
                 var v = Pop(); if (v is not ("i4" or "i8" or "f")) Fail("Numeric conversion on a non-number.", pc);
+                if (v == "f" && op is not ("conv.r8" or "conv.r.un") && !op.Contains(".ovf", StringComparison.Ordinal))
+                    Fail("Unchecked floating-to-integer conversion requires a target-specific undefined-range policy; use checked conversion in portable-mvp.", pc);
                 Push(op is "conv.r8" or "conv.r.un" ? "f" : op.Contains("i8", StringComparison.Ordinal) || op.Contains("u8", StringComparison.Ordinal) ? "i8" : "i4");
             }
             else if (op is "neg" or "not")
@@ -228,7 +241,12 @@ public static class CompilerAnalysis
             else if (op is "unbox" or "unbox.any") { Expect("o"); Push(op == "unbox" ? (string)i.Operand! + "&" : CliTypes.StackKind((string)i.Operand!)); }
             else if (op is "castclass" or "isinst") { Expect("o"); Push("o"); }
             else if (op == "throw") { Expect("o"); s.Clear(); }
-            else if (op == "rethrow" || op == "endfinally") { if (s.Count != 0) Fail("Exception terminator requires empty stack.", pc); }
+            else if (op == "rethrow" || op == "endfinally")
+            {
+                if (s.Count != 0) Fail("Exception terminator requires empty stack.", pc);
+                if (!method.Exceptions.Any(c => c.HandlerStart <= pc && pc < c.HandlerEnd &&
+                    (op == "rethrow" ? c.Kind == "Catch" : c.Kind is "Finally" or "Fault"))) Fail("Exception terminator outside its handler.", pc);
+            }
             else if (op == "leave") s.Clear();
             else if (op == "ret")
             {
@@ -236,8 +254,7 @@ public static class CompilerAnalysis
                 if (s.Count != 0) Fail("Return leaves values on the evaluation stack.", pc);
             }
             else if (op == "switch") Expect("i4");
-            else if (op is "brtrue" or "brfalse")
-            { if (Pop() is not ("i4" or "i8" or "o")) Fail("Invalid conditional branch operand.", pc); }
+            else if (op is "brtrue" or "brfalse") { if (Pop() is not ("i4" or "i8" or "o")) Fail("Invalid conditional branch operand.", pc); }
             else if (op is not ("br" or "nop"))
             {
                 var right = Pop(); var left = Pop();
@@ -245,6 +262,8 @@ public static class CompilerAnalysis
                 if (op is "shl" or "shr" or "shr.un")
                 { if (left is not ("i4" or "i8") || right != "i4") Fail("Invalid shift operands.", pc); }
                 else if (left != right || (!compare && left is not ("i4" or "i8" or "f"))) Fail("Incompatible arithmetic/comparison operands.", pc);
+                if (left == "f" && !compare && op is not ("add" or "sub" or "mul" or "div" or "rem")) Fail("Invalid floating-point operation.", pc);
+                if (left == "o" && compare && op is not ("ceq" or "beq" or "bne.un" or "cgt.un")) Fail("Ordered object comparisons are outside portable-mvp.", pc);
                 if (op is "ceq" or "cgt" or "cgt.un" or "clt" or "clt.un") Push("i4");
                 else if (!compare) Push(left);
             }
@@ -262,7 +281,7 @@ public static class CompilerAnalysis
     {
         "i1" => "System.SByte", "u1" => "System.Byte", "i2" => "System.Int16", "u2" => "System.UInt16",
         "i4" => "System.Int32", "u4" => "System.UInt32", "i8" => "System.Int64", "r8" => "System.Double", "ref" => "System.Object",
-        _ => throw new CompilationException(new("TR2101", $"Unknown element type for {i.Op}."))
+        _ => throw new CompilationException(new Diagnostic("TR2101", $"Unknown element type for {i.Op}."))
     };
     private static string ElementKind(Instruction i) => CliTypes.StackKind(ElementType(i));
 }

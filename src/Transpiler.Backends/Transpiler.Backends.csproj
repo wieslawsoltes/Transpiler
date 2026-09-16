@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Transpiler.Core/Transpiler.Core.csproj" />
+    <EmbeddedResource Include="Runtime/runtime.mjs" LogicalName="Transpiler.Runtime.JavaScript" />
+    <EmbeddedResource Include="Runtime/runtime.py" LogicalName="Transpiler.Runtime.Python" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Transpiler.Cli</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Transpiler.Core/Transpiler.Core.csproj" />
+    <ProjectReference Include="../Transpiler.Frontend.Roslyn/Transpiler.Frontend.Roslyn.csproj" />
+    <ProjectReference Include="../Transpiler.Backends/Transpiler.Backends.csproj" />
+  </ItemGroup>
+</Project>

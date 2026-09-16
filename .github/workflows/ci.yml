@@ -26,6 +26,11 @@ jobs:
       - name: Differential conformance
         run: |
           if [ -f tests/conformance.py ]; then python tests/conformance.py; fi
+      - name: Package source snapshot
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git archive --format=zip --output=artifacts/transpiler-source.zip HEAD
       - name: Upload compiler and reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,4 +39,4 @@ jobs:
           path: |
             src/Transpiler.Cli/bin/Release/net10.0/
             artifacts/
-          if-no-files-found: ignore
+          if-no-files-found: error
