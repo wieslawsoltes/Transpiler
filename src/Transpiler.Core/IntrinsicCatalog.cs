@@ -10,6 +10,8 @@ public static class IntrinsicCatalog
     private static readonly IReadOnlyDictionary<string, string> Entries = Build();
     public static string? Find(MethodReference method, AssemblyModel? image = null)
     {
+        var value = ValueSemanticsContracts.Find(method);
+        if (value is not null) return value;
         var service = RuntimeContracts.Find(method);
         if (service is not null) return service;
         var delegateIntrinsic = DelegateContracts.Find(method, image);

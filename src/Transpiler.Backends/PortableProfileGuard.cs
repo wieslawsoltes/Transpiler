@@ -40,7 +40,7 @@ internal static class PortableProfileGuard
         }
         foreach (var type in active)
         {
-            foreach (var obligation in image.FindType(type)?.RuntimeObligations ?? [])
+            foreach (var obligation in (image.FindType(type)?.RuntimeObligations ?? []).Where(n => n is not ("ToString" or "Equals" or "GetHashCode")))
                 errors.Add(new(obligation == "Finalize" ? "TR2211" : "TR2210", $"'{type}' requires the unsupported external runtime slot '{obligation}'."));
             if (UnsafeName(type) || type is "__proto__" or "constructor" or "prototype")
                 errors.Add(new("TR2213", $"Metadata name '{type}' is outside the portable source-emission profile."));
@@ -56,7 +56,7 @@ internal static class PortableProfileGuard
                 var internalSlot = image.Methods.Any(m => m.IsVirtual && m.Reference.Type != type &&
                     CompilerAnalysis.IsDerivedFrom(image, type, m.Reference.Type) && m.Reference.Name == method.Reference.Name &&
                     m.Reference.ReturnType == method.Reference.ReturnType && m.Reference.Parameters.SequenceEqual(method.Reference.Parameters));
-                if (!internalSlot)
+                if (!internalSlot && !ValueSemanticsContracts.IsObjectOverride(method))
                     errors.Add(new("TR2210", "This class overrides an external virtual slot. An explicit BCL override bridge is required.", method.Key));
             }
         }

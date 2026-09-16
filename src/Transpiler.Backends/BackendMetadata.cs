@@ -42,7 +42,7 @@ internal sealed class BackendMetadata
         object Describe(MethodReference reference, MethodDefinitionModel? definition) => new
         {
             type = reference.Type, name = reference.Name, @params = reference.Parameters, returns = reference.ReturnType,
-            instance = reference.Instance, @virtual = definition?.IsVirtual ?? false,
+            arguments = reference.GenericArguments, instance = reference.Instance, @virtual = definition?.IsVirtual ?? false,
             slot = definition is null ? reference.Key : Slot(definition),
             intrinsic = definition is null || definition.Instructions.Length == 0 ? IntrinsicCatalog.Find(reference, image) : null
         };
@@ -68,13 +68,14 @@ internal sealed class BackendMetadata
                     var current = name; var search = new HashSet<string>();
                     while (search.Add(current) && image.FindType(current) is { } owner)
                     {
+                        bool Reference(string t) => CliTypes.StackKind(t) == "o" && image.FindType(t)?.IsValueType != true;
                         bool Compatible(MethodReference implementation, MethodReference contractMethod) => implementation.Name == contractMethod.Name &&
                             implementation.Parameters.Length == contractMethod.Parameters.Length &&
-                            implementation.Parameters.Zip(contractMethod.Parameters).All(p => p.First == p.Second || CompilerAnalysis.IsAssignable(image, p.Second, p.First)) &&
-                            (implementation.ReturnType == contractMethod.ReturnType || CompilerAnalysis.IsAssignable(image, implementation.ReturnType, contractMethod.ReturnType));
+                            implementation.Parameters.Zip(contractMethod.Parameters).All(p => p.First == p.Second || Reference(p.First) && Reference(p.Second) && CompilerAnalysis.IsAssignable(image, p.Second, p.First)) &&
+                            (implementation.ReturnType == contractMethod.ReturnType || Reference(implementation.ReturnType) && Reference(contractMethod.ReturnType) && CompilerAnalysis.IsAssignable(image, implementation.ReturnType, contractMethod.ReturnType));
                         var explicitMap = owner.Overrides.FirstOrDefault(o => o.Declaration.Key == declaration.Key) ?? owner.Overrides.FirstOrDefault(o =>
                             CompilerAnalysis.IsAssignable(image, o.Declaration.Type, contract.Name) && Compatible(o.Declaration, declaration.Reference));
-                        implementation = explicitMap is not null ? image.Resolve(explicitMap.Body) : linked.Values.FirstOrDefault(m =>
+                        implementation = explicitMap is not null ? image.Resolve(explicitMap.Body) : linked.Values.OrderBy(m => m.Reference.Parameters.SequenceEqual(declaration.Reference.Parameters) && m.Reference.ReturnType == declaration.Reference.ReturnType ? 0 : 1).FirstOrDefault(m =>
                             m.Reference.Type == current && m.Reference.Instance && m.Reference.Name == declaration.Reference.Name &&
                             Compatible(m.Reference, declaration.Reference) &&
                             m.Reference.GenericArguments.SequenceEqual(declaration.Reference.GenericArguments));
@@ -90,6 +91,19 @@ internal sealed class BackendMetadata
             visiting.Remove(name);
             return tables[name] = table;
         }
+        Dictionary<string, string> ObjectSlots(string name)
+        {
+            var slots = new Dictionary<string, string>(StringComparer.Ordinal);
+            var seen = new HashSet<string>();
+            while (seen.Add(name) && image.FindType(name) is { } type)
+            {
+                foreach (var m in linked.Values.Where(m => m.Reference.Type == name && ValueSemanticsContracts.IsObjectOverride(m)))
+                    slots.TryAdd(m.Reference.Name, Id(m.Token));
+                if (type.BaseType is null) break;
+                name = type.BaseType;
+            }
+            return slots;
+        }
         var types = new SortedDictionary<string, object>(StringComparer.Ordinal);
         foreach (var t in image.Types.Where(t => t.GenericArity == 0))
             types[t.Name] = new
@@ -98,6 +112,7 @@ internal sealed class BackendMetadata
                 @base = t.BaseType, before = t.BeforeFieldInit, valueType = t.IsValueType, enumType = t.EnumUnderlyingType, enumFlags = t.EnumFlags, enumValues = t.EnumValues, interfaces = t.Interfaces,
                 fields = image.Fields.Where(f => f.Reference.Type == t.Name).Select(f => f.Reference.Key).ToArray(),
                 cctor = linked.Values.FirstOrDefault(m => m.Reference.Type == t.Name && m.Reference.Name == ".cctor") is { } cctor ? Id(cctor.Token) : null,
+                objectSlots = ObjectSlots(t.Name),
                 vtable = Table(t.Name, [])
             };
         var exports = new SortedDictionary<string, string>(StringComparer.Ordinal);

@@ -61,7 +61,7 @@ public static partial class CompilerAnalysis
             foreach (var type in method.Reference.Parameters.Concat(method.Locals)) Type(type);
             foreach (var field in image.Fields.Where(f => f.Reference.Type == method.Reference.Type)) Type(field.Reference.FieldType);
             // External virtual slots require a runtime/BCL override bridge, not just same-name dispatch.
-            if (method.IsVirtual && !method.NewSlot && image.FindType(method.Reference.Type)?.Overrides.Length == 0 && !image.Methods.Any(m => m.IsVirtual && m.Reference.Type != method.Reference.Type &&
+            if (method.IsVirtual && !method.NewSlot && !ValueSemanticsContracts.IsObjectOverride(method) && image.FindType(method.Reference.Type)?.Overrides.Length == 0 && !image.Methods.Any(m => m.IsVirtual && m.Reference.Type != method.Reference.Type &&
                 IsDerivedFrom(image, method.Reference.Type, m.Reference.Type) && m.Reference.Name == method.Reference.Name &&
                 m.Reference.Parameters.SequenceEqual(method.Reference.Parameters)))
                 Error("TR2012", "Overriding an external virtual slot is not implemented by portable-mvp.");
@@ -76,6 +76,8 @@ public static partial class CompilerAnalysis
                 if (!Supported.Contains(i.Op) && !Conversions.Contains(i.Op)) Error("TR2001", $"Opcode '{i.Op}' is not supported by portable-mvp.", i.Offset);
                 if (i.Operand is MethodReference call)
                 {
+                    if (ValueSemanticsContracts.Find(call) == "value.compare" && call.GenericArguments[0] == "System.String")
+                        Error("TR2300", "Culture-dependent string ordering requires a globalization provider; supply StringComparer.Ordinal explicitly.", i.Offset);
                     if (call.GenericArity != 0) Error("TR2005", "Generic method instantiations are not yet supported.", i.Offset);
                     foreach (var type in call.Parameters.Append(call.ReturnType)) Type(type, i.Offset);
                     if (image.Resolve(call) is { } target)

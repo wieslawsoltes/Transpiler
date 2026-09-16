@@ -8,6 +8,11 @@ public static class LibrarySubstitution
     public const string Policy = "portable-bcl-v1";
     public static IReadOnlyDictionary<string, string> Types { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["[Transpiler.Bcl]Transpiler.Bcl.EqualityComparer`1"] = "System.Collections.Generic.EqualityComparer`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Comparer`1"] = "System.Collections.Generic.Comparer`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.StringComparer"] = "System.StringComparer",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Nullable`1"] = "System.Nullable`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Nullable"] = "System.Nullable",
         ["[Transpiler.Bcl]Transpiler.Bcl.List`1"] = "System.Collections.Generic.List`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.Queue`1"] = "System.Collections.Generic.Queue`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.Stack`1"] = "System.Collections.Generic.Stack`1",

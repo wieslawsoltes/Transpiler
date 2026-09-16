@@ -10,7 +10,12 @@ public static class PortableCompilation
 {
     private static readonly HashSet<string> Contracts = new(StringComparer.Ordinal)
     {
-        "System.IDisposable", "System.Collections.IEnumerable", "System.Collections.IEnumerator",
+        "System.IDisposable", "System.IEquatable`1", "System.IComparable`1", "System.IComparable",
+        "System.Collections.Generic.IEqualityComparer`1", "System.Collections.Generic.IComparer`1",
+        "System.Collections.Generic.ICollection`1", "System.Collections.Generic.IList`1",
+        "System.Collections.Generic.IReadOnlyCollection`1", "System.Collections.Generic.IReadOnlyList`1",
+        "System.Collections.Generic.IDictionary`2", "System.Collections.Generic.IReadOnlyDictionary`2",
+        "System.Collections.Generic.ISet`1", "System.Collections.Generic.IReadOnlySet`1", "System.Collections.IEnumerable", "System.Collections.IEnumerator",
         "System.Collections.Generic.IEnumerable`1", "System.Collections.Generic.IEnumerator`1",
         "System.Runtime.CompilerServices.IAsyncStateMachine", "System.Runtime.CompilerServices.INotifyCompletion",
         "System.Runtime.CompilerServices.ICriticalNotifyCompletion"

@@ -40,18 +40,21 @@ public static class SourceEmitter
         using var services = typeof(SourceEmitter).Assembly.GetManifestResourceStream(python ? "Transpiler.Runtime.Python.Services" : "Transpiler.Runtime.JavaScript.Services")!;
         using var servicesReader = new StreamReader(services, Encoding.UTF8);
         output.AppendLine(servicesReader.ReadToEnd());
+        using var values = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + ".Values")!;
+        using var valuesReader = new StreamReader(values, Encoding.UTF8);
+        output.AppendLine(valuesReader.ReadToEnd());
         if (python)
         {
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = HostedRuntime(metadata)");
+            output.AppendLine("R = ValueRuntime(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new HostedRuntime(metadata);");
+            output.AppendLine("const R = new ValueRuntime(metadata);");
         }
         var count = 0;
         foreach (var method in analysis.Methods)
