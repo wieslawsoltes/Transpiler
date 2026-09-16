@@ -29,10 +29,7 @@ public static class PortableCompilation
             dependencies.Add(declarations);
             dependencies.Add(AssemblyImporter.Read(File.ReadAllBytes(typeof(Transpiler.Bcl.Enumerable).Assembly.Location)));
             var corePath = options.CoreLibrary ?? Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "System.Private.CoreLib.dll");
-            var original = AssemblyImporter.Read(File.ReadAllBytes(corePath), t => t == "System.Math",
-                m => m.Type == "System.Math" && m.Name == "BigMul" && m.Parameters.SequenceEqual(new[] { "System.Int32", "System.Int32" }) && m.ReturnType == "System.Int64");
-            if (original.Methods.Length != 1 || original.Methods[0].Instructions.Length == 0)
-                throw new CompilationException(new Diagnostic("TR3200", "The selected CoreLib does not contain the supported Math.BigMul(Int32,Int32) managed body."));
+            var original = UpstreamBclCatalog.Import(File.ReadAllBytes(corePath));
             dependencies.Add(original);
         }
         var linked = AssemblyLinker.Link(root, dependencies);

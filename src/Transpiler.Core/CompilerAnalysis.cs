@@ -55,7 +55,8 @@ public static partial class CompilerAnalysis
             void Type(string type, int? offset = null) { if (!SupportedType(image, type)) Error("TR2003", $"Type '{type}' needs a capability outside portable-mvp.", offset); }
             if (method.IsPInvoke || (!method.IsAbstract && !runtimeBody && method.Instructions.Length == 0)) Error("TR2004", "Reachable method has no supported managed body.");
             if (method.Reference.GenericArity != 0) Error("TR2005", "Generic methods require the planned reified/closed-generic lowering.");
-            if (!method.InitLocals && method.Locals.Length != 0) Error("TR2006", "Uninitialized local storage is not accepted by portable-mvp.");
+            try { DefiniteLocalAssignment.Validate(method); }
+            catch (CompilationException error) { errors.AddRange(error.Diagnostics); }
             Type(method.Reference.Type); Type(method.Reference.ReturnType);
             foreach (var type in method.Reference.Parameters.Concat(method.Locals)) Type(type);
             foreach (var field in image.Fields.Where(f => f.Reference.Type == method.Reference.Type)) Type(field.Reference.FieldType);
