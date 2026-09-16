@@ -24,7 +24,17 @@ jobs:
       - name: Build
         run: dotnet build Transpiler.slnx -c Release
       - name: Differential conformance
+        env:
+          TRANSPILER_TEST_FILTER: ''
         run: python tests/conformance.py
+      - name: Preserve binary redistribution notices
+        run: |
+          DEST=src/Transpiler.Cli/bin/Release/net10.0/licenses
+          mkdir -p "$DEST"
+          cp "$DOTNET_ROOT/LICENSE.txt" "$DEST/dotnet-sdk-LICENSE.txt"
+          cp "$DOTNET_ROOT/ThirdPartyNotices.txt" "$DEST/dotnet-sdk-ThirdPartyNotices.txt"
+          cp THIRD-PARTY-NOTICES.md "$DEST/Transpiler-THIRD-PARTY-NOTICES.md"
+          cp src/Transpiler.Backends/Runtime/NOTICE.txt "$DEST/dotnet-runtime-LICENSE.txt"
       - name: Package source snapshot
         if: always()
         run: |
