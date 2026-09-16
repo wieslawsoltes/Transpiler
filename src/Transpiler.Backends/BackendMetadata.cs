@@ -35,6 +35,7 @@ internal sealed class BackendMetadata
 
     public object Build()
     {
+        PortableProfileGuard.Validate(_analysis);
         var image = _analysis.Assembly;
         var linked = _analysis.Methods.Select(a => a.Method).ToDictionary(m => m.Token);
         var methods = new SortedDictionary<string, object>(StringComparer.Ordinal);
