@@ -74,7 +74,7 @@ internal sealed class BackendMetadata
                 vtable = Table(t.Name, [])
             };
         var exports = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var key in _analysis.Exports) exports[key] = Id(linked.Values.Single(m => m.Key == key).Token);
+        foreach (var key in _analysis.Exports) exports[AssemblyLinker.DisplayType(key)] = Id(linked.Values.Single(m => m.Key == key).Token);
         return new { schema = AssemblyModel.SchemaVersion, profile = "portable-mvp", assembly = image.Name,
             types, fields, methods, exports, entry = image.EntryPoint == 0 ? null : Id(image.EntryPoint) };
     }

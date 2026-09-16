@@ -9,16 +9,18 @@ using Diagnostic = Transpiler.Core.Diagnostic;
 namespace Transpiler.Frontend.Roslyn;
 
 public sealed record SourceFile(string Path, string Text);
-public sealed record ManagedCompilation(byte[] Pe, byte[] Pdb, string CompilerVersion);
+public sealed record ManagedCompilation(byte[] Pe, byte[] Pdb, string CompilerVersion)
+{
+    public ReferencePack? ReferencePack { get; init; }
+}
 
 public static class RoslynFrontend
 {
     public static ManagedCompilation Compile(IEnumerable<SourceFile> sources, string name = "Application", bool library = false,
-        bool optimize = true, IEnumerable<string>? references = null)
+        bool optimize = true, IEnumerable<string>? references = null, string? referencePackDirectory = null)
     {
-        var paths = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))?.Split(Path.PathSeparator)
-            ?? throw new CompilationException(new Diagnostic("TR0101", "The compiler host has no framework reference set."));
-        // The MVP records the host framework version. An SDK reference-pack resolver is a separate planned service.
+        var referencePack = ReferencePackResolver.Resolve(referencePackDirectory);
+        var paths = referencePack.Assemblies;
         var metadata = paths.Concat(references ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Select(p => MetadataReference.CreateFromFile(p)).ToArray();
         var trees = sources.OrderBy(s => s.Path, StringComparer.Ordinal).Select(s => CSharpSyntaxTree.ParseText(
@@ -31,6 +33,6 @@ public static class RoslynFrontend
         var result = compilation.Emit(pe, pdb, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
         if (!result.Success) throw new CompilationException(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
             .Select(d => new Diagnostic(d.Id, d.ToString())).ToArray());
-        return new(pe.ToArray(), pdb.ToArray(), typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "unknown");
+        return new(pe.ToArray(), pdb.ToArray(), typeof(CSharpCompilation).Assembly.GetName().Version?.ToString() ?? "unknown") { ReferencePack = referencePack };
     }
 }

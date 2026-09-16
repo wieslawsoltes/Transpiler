@@ -23,8 +23,8 @@ public static class AssemblyImporter
                 throw new CompilationException(new Diagnostic("TR1002", "Mixed-mode/native-entry assemblies are not supported by the portable profile."));
             var reader = pe.GetMetadataReader();
             if (!reader.IsAssembly) throw new BadImageFormatException("Standalone netmodules are not supported.");
-            var provider = new Signatures(reader);
             var name = reader.GetString(reader.GetAssemblyDefinition().Name);
+            var provider = new Signatures(reader, name);
             string Scope(EntityHandle h)
             {
                 if (h.Kind == HandleKind.TypeReference)
@@ -33,7 +33,12 @@ public static class AssemblyImporter
                     return scope.Kind == HandleKind.AssemblyReference ? reader.GetString(reader.GetAssemblyReference((AssemblyReferenceHandle)scope).Name)
                         : scope.Kind == HandleKind.TypeReference ? Scope(scope) : name;
                 }
-                return h.Kind == HandleKind.TypeSpecification ? "<generic>" : name;
+                if (h.Kind == HandleKind.TypeSpecification)
+                {
+                    var type = provider.TypeName(h);
+                    return type.StartsWith('[') ? type[1..type.IndexOf(']')] : "System.Private.CoreLib";
+                }
+                return name;
             }
             MethodReference Method(EntityHandle h)
             {
@@ -41,7 +46,7 @@ public static class AssemblyImporter
                 if (h.Kind == HandleKind.MethodSpecification)
                 {
                     var spec = reader.GetMethodSpecification((MethodSpecificationHandle)h);
-                    return Method(spec.Method) with { Token = token, GenericArity = spec.DecodeSignature(provider, null).Length };
+                    return Method(spec.Method) with { Token = token, GenericArguments = spec.DecodeSignature(provider, null).ToArray() };
                 }
                 if (h.Kind == HandleKind.MethodDefinition)
                 {
@@ -82,13 +87,20 @@ public static class AssemblyImporter
                 var type = reader.GetTypeDefinition(handle);
                 var typeName = provider.TypeName(handle);
                 var baseName = type.BaseType.IsNil ? null : provider.TypeName(type.BaseType);
-                // Until MethodImpl maps are modeled, rejecting these assemblies prevents incorrect explicit-interface/covariant dispatch.
-                if (type.GetMethodImplementations().Count != 0)
-                    throw new CompilationException(new Diagnostic("TR1010", $"Type '{typeName}' uses MethodImpl overrides, which are outside portable-mvp."));
                 types.Add(new(typeName, baseName, (type.Attributes & TypeAttributes.Interface) != 0,
                     baseName is "System.ValueType" or "System.Enum", (type.Attributes & TypeAttributes.BeforeFieldInit) != 0,
                     type.GetGenericParameters().Count, type.GetInterfaceImplementations().Select(i =>
-                        provider.TypeName(reader.GetInterfaceImplementation(i).Interface)).ToArray()));
+                        provider.TypeName(reader.GetInterfaceImplementation(i).Interface)).ToArray())
+                {
+                    Overrides = type.GetMethodImplementations().Select(h => reader.GetMethodImplementation(h))
+                        .Select(m => new MethodOverride(Method(m.MethodBody), Method(m.MethodDeclaration))).ToArray(),
+                    EnumUnderlyingType = baseName == "System.Enum" ? type.GetFields().Select(h => Field(h))
+                        .First(f => f.Name == "value__").FieldType : null,
+                    RuntimeObligations = type.GetMethods().Select(h => reader.GetMethodDefinition(h))
+                        .Where(m => (m.Attributes & MethodAttributes.Virtual) != 0 && (m.Attributes & MethodAttributes.NewSlot) == 0)
+                        .Select(m => reader.GetString(m.Name)).Where(n => n is "ToString" or "GetHashCode" or "Equals" or "Finalize").ToArray(),
+                    ExplicitLayout = (type.Attributes & TypeAttributes.LayoutMask) == TypeAttributes.ExplicitLayout
+                });
                 foreach (var f in type.GetFields())
                 {
                     var definition = reader.GetFieldDefinition(f);
@@ -114,14 +126,32 @@ public static class AssemblyImporter
                         body is null ? [] : CilDecoder.Decode(body.GetILBytes() ?? [], Resolve), exceptions));
                 }
             }
-            return new(name, cor.EntryPointTokenOrRelativeVirtualAddress, types.ToArray(), methods.ToArray(), fields.ToArray());
+            var assembly = reader.GetAssemblyDefinition();
+            string PublicKey(byte[] key, bool full)
+            {
+                if (key.Length == 0) return "null";
+                return Convert.ToHexString(full ? System.Security.Cryptography.SHA1.HashData(key)[^8..].Reverse().ToArray() : key).ToLowerInvariant();
+            }
+            var identity = new AssemblyIdentity(name, assembly.Version.ToString(), assembly.Culture.IsNil ? "neutral" : reader.GetString(assembly.Culture),
+                PublicKey(reader.GetBlobBytes(assembly.PublicKey), true));
+            return new(name, cor.EntryPointTokenOrRelativeVirtualAddress, types.ToArray(), methods.ToArray(), fields.ToArray())
+            {
+                Identity = identity,
+                Inputs = [new(identity.ToString(), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(image)).ToLowerInvariant())],
+                References = reader.AssemblyReferences.Select(h => reader.GetAssemblyReference(h)).Select(a => new AssemblyIdentity(
+                    reader.GetString(a.Name), a.Version.ToString(), a.Culture.IsNil ? "neutral" : reader.GetString(a.Culture),
+                    PublicKey(reader.GetBlobBytes(a.PublicKeyOrToken), (a.Flags & AssemblyFlags.PublicKey) != 0))).ToArray(),
+                IsReferenceAssembly = assembly.GetCustomAttributes().Select(h => reader.GetCustomAttribute(h)).Any(a =>
+                    a.Constructor.Kind is HandleKind.MemberReference or HandleKind.MethodDefinition &&
+                    Method(a.Constructor).Type == "System.Runtime.CompilerServices.ReferenceAssemblyAttribute")
+            };
         }
         catch (CompilationException) { throw; }
         catch (Exception e) when (e is BadImageFormatException or ArgumentException or InvalidOperationException or OverflowException or IndexOutOfRangeException)
         { throw new CompilationException(new Diagnostic("TR1001", $"Invalid or unsupported PE/metadata: {e.Message}")); }
     }
 
-    private sealed class Signatures(MetadataReader reader) : ISignatureTypeProvider<string, object?>
+    private sealed class Signatures(MetadataReader reader, string assemblyName) : ISignatureTypeProvider<string, object?>
     {
         public string TypeName(EntityHandle handle) => handle.Kind switch
         {
@@ -133,13 +163,16 @@ public static class AssemblyImporter
         public string GetTypeFromDefinition(MetadataReader r, TypeDefinitionHandle h, byte rawTypeKind)
         {
             var t = r.GetTypeDefinition(h); var n = r.GetString(t.Name); var ns = r.GetString(t.Namespace);
-            return !t.GetDeclaringType().IsNil ? TypeName(t.GetDeclaringType()) + "+" + n : ns.Length == 0 ? n : ns + "." + n;
+            return !t.GetDeclaringType().IsNil ? TypeName(t.GetDeclaringType()) + "+" + n : Qualify(assemblyName, ns.Length == 0 ? n : ns + "." + n);
         }
         public string GetTypeFromReference(MetadataReader r, TypeReferenceHandle h, byte rawTypeKind)
         {
             var t = r.GetTypeReference(h); var n = r.GetString(t.Name); var ns = r.GetString(t.Namespace);
-            return t.ResolutionScope.Kind == HandleKind.TypeReference ? TypeName((EntityHandle)t.ResolutionScope) + "+" + n : ns.Length == 0 ? n : ns + "." + n;
+            var scope = t.ResolutionScope.Kind == HandleKind.AssemblyReference
+                ? r.GetString(r.GetAssemblyReference((AssemblyReferenceHandle)t.ResolutionScope).Name) : assemblyName;
+            return t.ResolutionScope.Kind == HandleKind.TypeReference ? TypeName(t.ResolutionScope) + "+" + n : Qualify(scope, ns.Length == 0 ? n : ns + "." + n);
         }
+        private static string Qualify(string scope, string type) => AssemblyLinker.IsFramework(scope) ? type : "[" + scope + "]" + type;
         public string GetPrimitiveType(PrimitiveTypeCode code) => "System." + code;
         public string GetSZArrayType(string elementType) => elementType + "[]";
         public string GetArrayType(string elementType, ArrayShape shape) => elementType + "[rank=" + shape.Rank + "]";
