@@ -8,6 +8,14 @@ public static class LibrarySubstitution
     public const string Policy = "portable-bcl-v1";
     public static IReadOnlyDictionary<string, string> Types { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["[Transpiler.Bcl]Transpiler.Bcl.ExceptionDispatchInfo"] = "System.Runtime.ExceptionServices.ExceptionDispatchInfo",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Async.IAsyncDisposable"] = "System.IAsyncDisposable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Async.IAsyncEnumerable`1"] = "System.Collections.Generic.IAsyncEnumerable`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Async.IAsyncEnumerator`1"] = "System.Collections.Generic.IAsyncEnumerator`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Async.ConfiguredCancelableAsyncEnumerable`1"] = "System.Runtime.CompilerServices.ConfiguredCancelableAsyncEnumerable`1",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Async.ConfiguredAsyncDisposable"] = "System.Runtime.CompilerServices.ConfiguredAsyncDisposable",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.AsyncIteratorMethodBuilder"] = "System.Runtime.CompilerServices.AsyncIteratorMethodBuilder",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.TaskAsyncEnumerableExtensions"] = "System.Threading.Tasks.TaskAsyncEnumerableExtensions",
         ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.Sources.IValueTaskSource"] = "System.Threading.Tasks.Sources.IValueTaskSource",
         ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.Sources.IValueTaskSource`1"] = "System.Threading.Tasks.Sources.IValueTaskSource`1",
         ["[Transpiler.Bcl]Transpiler.Bcl.Tasks.Sources.ValueTaskSourceStatus"] = "System.Threading.Tasks.Sources.ValueTaskSourceStatus",
