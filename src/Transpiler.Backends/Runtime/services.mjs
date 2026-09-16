@@ -50,6 +50,31 @@ class HostedRuntime extends ManagedRuntime {
         }
         return super.external(method, args);
     }
+    async await_export(name, args, options = {}) {
+        const maxSteps = options.maxSteps ?? 100000;
+        if (!Number.isSafeInteger(maxSteps) || maxSteps < 1) throw new TypeError('maxSteps must be a positive integer');
+        const yieldHost = options.yieldHost ?? (() => new Promise(resolve => setTimeout(resolve, 0)));
+        if (typeof yieldHost !== 'function') throw new TypeError('yieldHost must be a function');
+        const candidates = Object.entries(this.meta.exports).filter(([k]) => k === name || k.split('(')[0] === name);
+        if (candidates.length !== 1) throw new Error('Use an unambiguous exported method signature');
+        const resultType = this.meta.methods[candidates[0][1]].returns;
+        const binding = this.meta.asyncBindings[resultType];
+        const value = this.invoke_export(name, args);
+        if (!binding) return value;
+        const receiver = binding.valueType ? this.cell_ref([value], 0, resultType) : value;
+        for (let step = 0; step < maxSteps; ++step) {
+            options.signal?.throwIfAborted();
+            if (this.call(binding.completed, [receiver])) {
+                const cell = [this.call(binding.getAwaiter, [receiver])];
+                const result = this.call(binding.getResult, [this.cell_ref(cell, 0, binding.awaiterType)]);
+                if (result instanceof CliString) return result.text;
+                return binding.resultType === 'System.Boolean' ? Boolean(result) : result;
+            }
+            this.call(binding.pump, []);
+            await yieldHost();
+        }
+        throw new Error('Cooperative task exceeded the host pump step budget');
+    }
     retain(value) {
         if (!Number.isSafeInteger(this.nextRoot)) throw new RangeError('Root handle budget exhausted');
         const handle = this.nextRoot++;

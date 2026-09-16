@@ -76,7 +76,7 @@ public static partial class CompilerAnalysis
             }
             foreach (var i in method.Instructions)
             {
-                if (i.Op == "ldtoken" && i.Operand is not FieldReference) Error("TR2013", "Type/method tokens require reflection metadata support.", i.Offset);
+                if (i.Op == "ldtoken" && i.Operand is not (FieldReference or string)) Error("TR2013", "Method and unsupported member tokens require additional reflection metadata support.", i.Offset);
                 if (!Supported.Contains(i.Op) && !Conversions.Contains(i.Op)) Error("TR2001", $"Opcode '{i.Op}' is not supported by portable-mvp.", i.Offset);
                 if (i.Operand is MethodReference call)
                 {
@@ -110,7 +110,7 @@ public static partial class CompilerAnalysis
                     else if (definition.IsLiteral || definition.IsStatic != (i.Op is "ldsfld" or "stsfld" or "ldsflda"))
                         Error("TR2008", "Literal field access or field storage-kind mismatch.", i.Offset);
                 }
-                if (i.Code.OperandType == OperandType.InlineType && i.Operand is string typeName) Type(typeName, i.Offset);
+                if ((i.Code.OperandType is OperandType.InlineType or OperandType.InlineTok) && i.Operand is string typeName) Type(typeName, i.Offset);
             }
             if (errors.Count == before)
             {
@@ -167,10 +167,11 @@ public static partial class CompilerAnalysis
     {
         if (depth > 64) return false;
         if (type.EndsWith('&')) return !type[..^1].EndsWith('&') && SupportedType(image, type[..^1], depth + 1);
+        if (ArrayContracts.TryShape(type, out var element, out _)) return SupportedType(image, element, depth + 1);
         if (type.EndsWith("[]", StringComparison.Ordinal)) return SupportedType(image, type[..^2], depth + 1);
         if (DelegateContracts.IsDelegate(type, image) || RuntimeContracts.IsWeakReference(type)) return true;
         if (type is "System.Delegate" or "System.MulticastDelegate" or "System.IntPtr") return true;
-        if (CliTypes.IsPrimitive(type) || type is "System.Array" or "System.RuntimeFieldHandle" or "System.String" or "System.Object" or "System.ValueType" or "System.Enum" || IntrinsicCatalog.ExceptionTypes.Contains(type)) return true;
+        if (CliTypes.IsPrimitive(type) || type is "System.Array" or "System.Type" or "System.RuntimeTypeHandle" or "System.RuntimeFieldHandle" or "System.String" or "System.Object" or "System.ValueType" or "System.Enum" || IntrinsicCatalog.ExceptionTypes.Contains(type)) return true;
         var t = image.FindType(type);
         return t is { GenericArity: 0, ExplicitLayout: false } &&
             (t.BaseType is null || SupportedType(image, t.BaseType, depth + 1));

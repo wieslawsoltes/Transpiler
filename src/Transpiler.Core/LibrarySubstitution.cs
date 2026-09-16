@@ -78,7 +78,7 @@ public static class LibrarySubstitution
                 Exceptions = m.Exceptions.Select(e => e with { CatchType = e.CatchType is null ? null : Type(e.CatchType) }).ToArray(),
                 Instructions = m.Instructions.Select(i => i with { Operand = i.Operand switch
                 { MethodReference x => Method(x), FieldReference x => Field(x),
-                  string x when i.Code.OperandType == OperandType.InlineType => Type(x), _ => i.Operand } }).ToArray() }).ToArray()
+                  string x when i.Code.OperandType is OperandType.InlineType or OperandType.InlineTok => Type(x), _ => i.Operand } }).ToArray() }).ToArray()
         };
     }
 }

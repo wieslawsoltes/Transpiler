@@ -44,6 +44,26 @@ class HostedRuntime(ManagedRuntime):
             return int(value is not None)
         return super().external(method, args)
 
+    async def await_export(self, name, args, max_steps=100000):
+        import asyncio
+        if not isinstance(max_steps, int) or max_steps < 1: raise ValueError('max_steps must be a positive integer')
+        candidates = [(k, v) for k, v in self.meta['exports'].items() if k == name or k.split('(')[0] == name]
+        if len(candidates) != 1: raise ValueError('Use an unambiguous exported method signature')
+        result_type = self.meta['methods'][candidates[0][1]]['returns']
+        binding = self.meta['asyncBindings'].get(result_type)
+        value = self.invoke_export(name, args)
+        if binding is None: return value
+        receiver = self.cell_ref([value], 0, result_type) if binding.get('valueType') else value
+        for _ in range(max_steps):
+            if self.call(binding['completed'], [receiver]):
+                cell = [self.call(binding['getAwaiter'], [receiver])]
+                result = self.call(binding['getResult'], [self.cell_ref(cell, 0, binding['awaiterType'])])
+                if isinstance(result, CliString): return result.text
+                return bool(result) if binding['resultType'] == 'System.Boolean' else result
+            self.call(binding['pump'], [])
+            await asyncio.sleep(0)
+        raise TimeoutError('Cooperative task exceeded the host pump step budget')
+
     def retain(self, value):
         if self._next_root > 9007199254740991: raise OverflowError('Root handle budget exhausted')
         handle = self._next_root

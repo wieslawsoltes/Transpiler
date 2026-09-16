@@ -82,6 +82,7 @@ public static class AssemblyImporter
                 OperandType.InlineMethod => Method(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineField => Field(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineTok when MetadataTokens.EntityHandle(token).Kind == HandleKind.FieldDefinition => Field(MetadataTokens.EntityHandle(token)),
+                OperandType.InlineTok when MetadataTokens.EntityHandle(token).Kind is HandleKind.TypeDefinition or HandleKind.TypeReference or HandleKind.TypeSpecification => provider.TypeName(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineType => provider.TypeName(MetadataTokens.EntityHandle(token)),
                 _ => token
             };

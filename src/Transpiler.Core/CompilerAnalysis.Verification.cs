@@ -57,7 +57,7 @@ public static partial class CompilerAnalysis
             else if (op == "ldc.i8") Push("i8");
             else if (op == "ldc.r8") Push("f");
             else if (op == "ldc.r4") Push("f4");
-            else if (op == "ldtoken") Push("fieldhandle");
+            else if (op == "ldtoken") Push(i.Operand is string ? "typehandle" : "fieldhandle");
             else if (op == "ckfinite") { var kind = Pop(); if (kind is not ("f" or "f4")) Fail("ckfinite requires floating-point input.", pc); Push(kind); }
             else if (op is "ldnull" or "ldstr") Push("o");
             else if (op == "dup") { var v = Pop(); Push(v); Push(v); }

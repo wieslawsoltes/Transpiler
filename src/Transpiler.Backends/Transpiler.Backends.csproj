@@ -13,6 +13,8 @@
     <EmbeddedResource Include="Runtime/numeric.py" LogicalName="Transpiler.Runtime.Python.Numeric" />
     <EmbeddedResource Include="Runtime/exceptions.mjs" LogicalName="Transpiler.Runtime.JavaScript.Exceptions" />
     <EmbeddedResource Include="Runtime/exceptions.py" LogicalName="Transpiler.Runtime.Python.Exceptions" />
+    <EmbeddedResource Include="Runtime/arrays.mjs" LogicalName="Transpiler.Runtime.JavaScript.Arrays" />
+    <EmbeddedResource Include="Runtime/arrays.py" LogicalName="Transpiler.Runtime.Python.Arrays" />
     <EmbeddedResource Include="Runtime/NOTICE.txt" LogicalName="Transpiler.Runtime.DotNetNotice" />
   </ItemGroup>
 </Project>

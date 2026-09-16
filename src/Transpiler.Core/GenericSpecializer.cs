@@ -63,6 +63,8 @@ public static partial class GenericSpecializer
             if (name.EndsWith('&') || name.EndsWith('*')) return CloseType(name[..^1]) + name[^1];
             if (name.EndsWith("[]", StringComparison.Ordinal))
             { var array = CloseType(name[..^2]) + "[]"; arrays.Add(array); return array; }
+            if (ArrayContracts.TryShape(name, out var element, out var rank))
+            { element = CloseType(element); arrays.Add(element + "[]"); return element + "[rank=" + rank + "]"; }
             var (definition, arguments) = Split(name);
             if (arguments.Length > 0)
             {
@@ -168,7 +170,7 @@ public static partial class GenericSpecializer
                     Operand = i.Operand switch
                     {
                         MethodReference m => M(m), FieldReference f => F(f),
-                        string t when i.Code.OperandType == System.Reflection.Emit.OperandType.InlineType => T(t),
+                        string t when i.Code.OperandType is System.Reflection.Emit.OperandType.InlineType or System.Reflection.Emit.OperandType.InlineTok => T(t),
                         _ => i.Operand
                     }
                 }).ToArray();
@@ -178,6 +180,8 @@ public static partial class GenericSpecializer
                     Exceptions = work.Template.Exceptions.Select(e => e with { CatchType = e.CatchType is null ? null : T(e.CatchType) }).ToArray()
                 };
                 foreach (var i in instructions.Where(i => i.Op == "newarr")) arrays.Add((string)i.Operand! + "[]");
+                foreach (var i in instructions.Where(i => i.Op == "ldtoken" && i.Operand is string))
+                    if ((string)i.Operand! is not "System.Void") arrays.Add((string)i.Operand! + "[]");
                 foreach (var i in instructions.Where(i => i.Op is "callvirt" or "ldvirtftn"))
                 {
                     var call = (MethodReference)i.Operand!;
@@ -193,7 +197,7 @@ public static partial class GenericSpecializer
                 {
                     var (contract, arguments) = Split(call.Type);
                     if (contract == "System.Collections.Generic.IEnumerable`1" && arguments.Length == 1) elements.Add(arguments[0]);
-                    if (contract == "System.Collections.IEnumerable")
+                    if (contract is "System.Collections.IEnumerable" or "System.Array")
                     { foreach (var array in arrays.ToArray()) elements.Add(array[..^2]); elements.Add("System.Char"); }
                 }
                 foreach (var element in elements)
@@ -224,15 +228,15 @@ public static partial class GenericSpecializer
                         hostRoots.Add(Bind(member.Reference with { Type = type.Name }).Key);
                 }
                 // The host async ABI is a real reachability root, independent of application calls.
-                if (definition is "System.Threading.Tasks.Task" or "System.Threading.Tasks.Task`1")
+                if (definition is "System.Threading.Tasks.Task" or "System.Threading.Tasks.Task`1" or "System.Threading.Tasks.ValueTask" or "System.Threading.Tasks.ValueTask`1")
                 {
-                    foreach (var member in input.Methods.Where(m => m.Reference.Type == definition && m.Reference.Name == "GetAwaiter"))
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == definition && (m.Reference.Name is "GetAwaiter" or "get_IsCompleted")))
                         hostRoots.Add(Bind(member.Reference with { Type = type.Name }).Key);
                     foreach (var member in input.Methods.Where(m => m.Reference.Type == "System.Threading.Tasks.Task" && m.Reference.Name == "get_IsCompleted" ||
                         m.Reference.Type == "[Transpiler.Bcl]Transpiler.Bcl.Tasks.Scheduler" && m.Reference.Name == "RunOne"))
                         hostRoots.Add(Bind(member.Reference).Key);
                 }
-                if (definition is "System.Runtime.CompilerServices.TaskAwaiter" or "System.Runtime.CompilerServices.TaskAwaiter`1")
+                if (definition is "System.Runtime.CompilerServices.TaskAwaiter" or "System.Runtime.CompilerServices.TaskAwaiter`1" or "System.Runtime.CompilerServices.ValueTaskAwaiter" or "System.Runtime.CompilerServices.ValueTaskAwaiter`1")
                     foreach (var member in input.Methods.Where(m => m.Reference.Type == definition && m.Reference.Name == "GetResult"))
                         hostRoots.Add(Bind(member.Reference with { Type = type.Name }).Key);
                 string T(string value) => value == definition ? type.Name : CloseType(Substitute(value, arguments, []));

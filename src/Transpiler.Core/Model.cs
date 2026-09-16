@@ -94,6 +94,7 @@ public static class CliTypes
         "System.Single" => "f4",
         "System.Double" => "f",
         "System.RuntimeFieldHandle" => "fieldhandle",
+        "System.RuntimeTypeHandle" => "typehandle",
         "System.Boolean" or "System.Char" or "System.SByte" or "System.Byte" or
         "System.Int16" or "System.UInt16" or "System.Int32" or "System.UInt32" => "i4",
         _ when type.EndsWith('&') => type,

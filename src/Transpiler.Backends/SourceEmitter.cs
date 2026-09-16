@@ -7,7 +7,13 @@ using Transpiler.Core;
 namespace Transpiler.Backends;
 
 public enum SourceTarget { JavaScript, Python }
-public sealed record GeneratedSource(string Text, string Extension, int MethodCount, int InstructionCount);
+public enum DispatchMode { Instruction, BasicBlock }
+public sealed record SourceEmissionOptions(DispatchMode Dispatch = DispatchMode.Instruction);
+public sealed record GeneratedSource(string Text, string Extension, int MethodCount, int InstructionCount)
+{
+    public DispatchMode Dispatch { get; init; }
+    public int DispatchCaseCount { get; init; }
+}
 
 /// <summary>
 /// Emits ordinary target-language functions. Each CIL instruction becomes concrete source statements;
@@ -16,8 +22,11 @@ public sealed record GeneratedSource(string Text, string Extension, int MethodCo
 public static class SourceEmitter
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    public static GeneratedSource Emit(CompilationAnalysis analysis, SourceTarget target)
+    public static GeneratedSource Emit(CompilationAnalysis analysis, SourceTarget target, SourceEmissionOptions? options = null)
     {
+        options ??= new();
+        if (!Enum.IsDefined(options.Dispatch)) throw new ArgumentOutOfRangeException(nameof(options));
+        var blocks = options.Dispatch == DispatchMode.BasicBlock;
         var python = target == SourceTarget.Python;
         var metadata = new BackendMetadata(analysis);
         var json = JsonSerializer.Serialize(metadata.Build(), JsonOptions);
@@ -34,7 +43,7 @@ public static class SourceEmitter
             foreach (var line in noticeReader.ReadToEnd().Split('\n')) output.AppendLine((python ? "# " : "// ") + line);
         }
         output.AppendLine(reader.ReadToEnd());
-        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions" })
+        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions", ".Arrays" })
         {
             using var layerStream = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + layer)
                 ?? throw new InvalidOperationException($"Missing embedded runtime layer: {layer}");
@@ -46,18 +55,19 @@ public static class SourceEmitter
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = ExceptionRuntime(metadata)");
+            output.AppendLine("R = ArrayRuntime(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new ExceptionRuntime(metadata);");
+            output.AppendLine("const R = new ArrayRuntime(metadata);");
         }
-        var count = 0;
+        var count = 0; var cases = 0;
         foreach (var method in analysis.Methods)
         {
-            EmitMethod(output, method, metadata, analysis.Assembly, python);
+            EmitMethod(output, method, metadata, analysis.Assembly, python, blocks);
+            cases += blocks ? (method.ControlFlow ?? CilControlFlow.Build(method.Method)).Blocks.Count(b => method.StackBefore.ContainsKey(b.Start)) : method.StackBefore.Count;
             count += method.StackBefore.Count;
         }
         foreach (var method in analysis.Methods)
@@ -79,7 +89,7 @@ public static class SourceEmitter
             output.AppendLine("export const manifest = Object.freeze({ assembly: metadata.assembly, profile: metadata.profile, exports: Object.keys(metadata.exports) });");
             output.AppendLine("if (metadata.entry !== null && typeof process !== 'undefined' && process.versions?.node && process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {\n    try { process.exitCode = main(process.argv.slice(2)); }\n    catch (error) { if (!(error instanceof CliError)) throw error; process.stderr.write(error.message + '\\n'); process.exitCode = 1; }\n}");
         }
-        return new(output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal), python ? ".py" : ".mjs", analysis.Methods.Length, count);
+        return new(output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal), python ? ".py" : ".mjs", analysis.Methods.Length, count) { Dispatch = options.Dispatch, DispatchCaseCount = cases };
     }
 
     private static string Quote(string value) => JsonSerializer.Serialize(value);
@@ -99,9 +109,10 @@ public static class SourceEmitter
         return Convert.ToString(value, CultureInfo.InvariantCulture)!;
     }
 
-    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python)
+    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python, bool blocks)
     {
         var method = analysis.Method;
+        var leaders = blocks ? (analysis.ControlFlow ?? CilControlFlow.Build(method)).Blocks.Select(b => b.Start).ToHashSet() : [];
         var nullValue = python ? "None" : "null";
         var argumentTypes = method.IsStatic ? method.Reference.Parameters : new[] { method.Reference.Type + (image.FindType(method.Reference.Type)?.IsValueType == true ? "&" : "") }.Concat(method.Reference.Parameters).ToArray();
         var args = "[" + string.Join(", ", argumentTypes.Select((type, index) => $"R.coerce(a[{index}], {Quote(type)})")) + "]";
@@ -118,13 +129,18 @@ public static class SourceEmitter
         foreach (var instruction in method.Instructions.Where(i => analysis.StackBefore.ContainsKey(i.Offset)))
         {
             var i = instruction;
-            output.AppendLine(python ? $"                case {i.Offset}:  # IL_{i.Offset:x4}: {i.Op}" : $"                case {i.Offset}: // IL_{i.Offset:x4}: {i.Op}");
+            if (!blocks || leaders.Contains(i.Offset))
+                output.AppendLine(python ? $"                case {i.Offset}:  # IL_{i.Offset:x4}: {i.Op}" : $"                case {i.Offset}: // IL_{i.Offset:x4}: {i.Op}");
+            else output.AppendLine((python ? "                    # " : "                    // ") + $"IL_{i.Offset:x4}: {i.Op}");
             void Line(string text) => output.AppendLine("                    " + text + (python ? "" : ";"));
             void Push(string expression) => Line($"s.{(python ? "append" : "push")}({expression})");
             void Pop(string variable) => Line(variable + " = s.pop()");
             void Jump(string expression) { Line("pc = " + expression); Line("continue"); }
             string Kind(int fromEnd) => analysis.StackBefore[i.Offset][^fromEnd];
             string Choice(string condition, string yes, string no) => python ? $"{yes} if {condition} else {no}" : $"{condition} ? {yes} : {no}";
+            // Keep the precise faulting IL offset even when several instructions share a dispatch case.
+            // No evaluation-stack, storage-copy, null/bounds-check, or type-initialization effects are elided.
+            if (blocks) Line("pc = " + i.Offset.ToString(CultureInfo.InvariantCulture));
             var terminal = false;
             var op = i.Op;
             if (op == "nop") Line(python ? "pass" : "void 0");
@@ -139,7 +155,8 @@ public static class SourceEmitter
                 var index = (int)i.Operand!;
                 Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? argumentTypes : method.Locals)[index])})");
             }
-            else if (op == "ldtoken") Push($"R.data_handle({Quote(((FieldReference)i.Operand!).Key)})");
+            else if (op == "ldtoken") Push(i.Operand is string typeToken
+                ? $"R.type_handle({Quote(typeToken)})" : $"R.data_handle({Quote(((FieldReference)i.Operand!).Key)})");
             else if (op == "ckfinite") Push("R.finite(s.pop())");
             else if (op.StartsWith("ldc.", StringComparison.Ordinal)) Push(Number(i.Operand!, python));
             else if (op == "ldnull") Push(nullValue);
@@ -175,7 +192,7 @@ public static class SourceEmitter
             {
                 var field = (FieldReference)i.Operand!;
                 var receiver = op.StartsWith("lds", StringComparison.Ordinal) ? nullValue : "s.pop()";
-                Push($"R.{(op.EndsWith('a') ? "field_ref" : "field_get")}({receiver}, {Quote(field.Key)})");
+                Push($"R.{(op.EndsWith('a') ? "field_ref" : "field_get") }({receiver}, {Quote(field.Key)})");
             }
             else if (op is "stfld" or "stsfld")
             {
@@ -231,7 +248,7 @@ public static class SourceEmitter
                 { Jump(Choice(expression, Number(i.Operand!, python), i.NextOffset.ToString(CultureInfo.InvariantCulture))); terminal = true; }
                 else Push(expression);
             }
-            if (!terminal) Jump(i.NextOffset.ToString(CultureInfo.InvariantCulture));
+            if (!terminal && (!blocks || leaders.Contains(i.NextOffset))) Jump(i.NextOffset.ToString(CultureInfo.InvariantCulture));
         }
         if (python)
             output.AppendLine("                case _:\n                    raise RuntimeError('Invalid generated program counter: ' + str(pc))\n        except CliError as error:\n            pc = flow.handle(error, pc, s)");

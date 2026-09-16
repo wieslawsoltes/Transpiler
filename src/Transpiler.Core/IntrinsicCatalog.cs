@@ -6,10 +6,12 @@ public static class IntrinsicCatalog
     public static readonly string[] ExceptionTypes = ["System.Exception", "System.SystemException", "System.ArithmeticException",
         "System.DivideByZeroException", "System.OverflowException", "System.NullReferenceException", "System.IndexOutOfRangeException",
         "System.ArrayTypeMismatchException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentOutOfRangeException",
-        "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.ObjectDisposedException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
+        "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.ObjectDisposedException", "System.TypeLoadException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];
     private static readonly IReadOnlyDictionary<string, string> Entries = Build();
     public static string? Find(MethodReference method, AssemblyModel? image = null)
     {
+        var array = ArrayContracts.Find(method);
+        if (array is not null) return array;
         var value = ValueSemanticsContracts.Find(method);
         if (value is not null) return value;
         var service = RuntimeContracts.Find(method);
@@ -50,6 +52,7 @@ public static class IntrinsicCatalog
             Add(type, ".ctor", "System.Void", ["System.String"], "exception.ctor", true);
         }
         Add("System.Exception", ".ctor", "System.Void", ["System.String", "System.Exception"], "exception.ctor", true);
+        Add("System.SystemException", ".ctor", "System.Void", ["System.String", "System.Exception"], "exception.ctor", true);
         Add("System.Exception", "get_InnerException", "System.Exception", [], "exception.inner", true);
         Add("System.Exception", "GetBaseException", "System.Exception", [], "exception.base", true);
         Add("System.Exception", "get_Message", "System.String", [], "exception.message", true);
