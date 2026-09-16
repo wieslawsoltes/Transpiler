@@ -51,7 +51,7 @@ internal sealed class BackendMetadata
             if (image.Resolve(reference) is null) methods[Id(reference.Token)] = Describe(reference, null);
         var fields = new SortedDictionary<string, object>(StringComparer.Ordinal);
         foreach (var f in image.Fields)
-            fields[f.Reference.Key] = new { owner = f.Reference.Type, type = f.Reference.FieldType, @static = f.IsStatic };
+            fields[f.Reference.Key] = new { owner = f.Reference.Type, type = f.Reference.FieldType, @static = f.IsStatic, data = f.InitialData?.Select(b => (int)b).ToArray() };
         var tables = new Dictionary<string, SortedDictionary<string, string>>();
         SortedDictionary<string, string> Table(string name, HashSet<string> visiting)
         {

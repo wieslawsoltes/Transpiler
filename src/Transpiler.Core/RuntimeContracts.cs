@@ -8,6 +8,8 @@ public static class RuntimeContracts
     public static string? Find(MethodReference method)
     {
         if (!AssemblyLinker.IsFramework(method.Assembly)) return null;
+        var numeric = NumericContracts.Find(method);
+        if (numeric is not null) return numeric;
         if (!method.Instance && method.ReturnType == "System.Void" && method.Type == "System.GC" && method.Name == "KeepAlive" &&
             method.Parameters.SequenceEqual(new[] { "System.Object" })) return "gc.keep-alive";
         if (!method.Instance && method.ReturnType == "System.Int32" && method.Type == "System.Runtime.CompilerServices.RuntimeHelpers" &&

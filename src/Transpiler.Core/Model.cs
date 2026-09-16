@@ -52,7 +52,10 @@ public sealed record AssemblyIdentity(string Name, string Version, string Cultur
     public override string ToString() => $"{Name}, Version={Version}, Culture={Culture}, PublicKeyToken={PublicKeyToken}";
 }
 public sealed record AssemblyInput(string Identity, string Sha256);
-public sealed record FieldDefinitionModel(FieldReference Reference, bool IsStatic, bool IsLiteral, object? Constant);
+public sealed record FieldDefinitionModel(FieldReference Reference, bool IsStatic, bool IsLiteral, object? Constant)
+{
+    public byte[]? InitialData { get; init; }
+}
 public sealed record MethodDefinitionModel(MethodReference Reference, bool IsPublic, bool IsVirtual, bool NewSlot,
     bool IsAbstract, bool IsPInvoke, bool InitLocals, int MaxStack, string[] Locals,
     Instruction[] Instructions, ExceptionClause[] Exceptions)
@@ -88,7 +91,9 @@ public static class CliTypes
         "System.Void" => "void",
         "System.IntPtr" => "fn",
         "System.Int64" or "System.UInt64" => "i8",
-        "System.Single" or "System.Double" => "f",
+        "System.Single" => "f4",
+        "System.Double" => "f",
+        "System.RuntimeFieldHandle" => "fieldhandle",
         "System.Boolean" or "System.Char" or "System.SByte" or "System.Byte" or
         "System.Int16" or "System.UInt16" or "System.Int32" or "System.UInt32" => "i4",
         _ when type.EndsWith('&') => type,
@@ -97,5 +102,5 @@ public static class CliTypes
 
     public static bool IsPrimitive(string type) => type is "System.Void" or "System.Boolean" or
         "System.Char" or "System.SByte" or "System.Byte" or "System.Int16" or "System.UInt16" or
-        "System.Int32" or "System.UInt32" or "System.Int64" or "System.UInt64" or "System.Double";
+        "System.Int32" or "System.UInt32" or "System.Int64" or "System.UInt64" or "System.Single" or "System.Double";
 }

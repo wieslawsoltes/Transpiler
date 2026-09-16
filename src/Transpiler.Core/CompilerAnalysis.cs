@@ -10,11 +10,11 @@ public static partial class CompilerAnalysis
 {
     private static readonly HashSet<string> Supported = new(("nop ldarg ldarga starg ldloc ldloca stloc ldc.i4 ldc.i8 ldc.r8 ldc.r4 ldnull ldstr dup pop " +
         "add sub mul div div.un rem rem.un neg not and or xor shl shr shr.un add.ovf add.ovf.un sub.ovf sub.ovf.un mul.ovf mul.ovf.un " +
-        "ceq cgt cgt.un clt clt.un br brtrue brfalse beq bne.un bge bge.un bgt bgt.un ble ble.un blt blt.un switch ret call callvirt newobj ldftn ldvirtftn " +
+        "ceq cgt cgt.un clt clt.un br brtrue brfalse beq bne.un bge bge.un bgt bgt.un ble ble.un blt blt.un switch ret call callvirt newobj ldftn ldvirtftn ldtoken ckfinite " +
         "ldfld stfld ldflda ldsfld stsfld ldsflda newarr ldlen ldelema ldelem stelem " +
-        "ldelem.i1 ldelem.u1 ldelem.i2 ldelem.u2 ldelem.i4 ldelem.u4 ldelem.i8 ldelem.r8 ldelem.ref " +
-        "stelem.i1 stelem.i2 stelem.i4 stelem.i8 stelem.r8 stelem.ref " +
-        "ldind.i1 ldind.u1 ldind.i2 ldind.u2 ldind.i4 ldind.u4 ldind.i8 ldind.r8 ldind.ref stind.i1 stind.i2 stind.i4 stind.i8 stind.r8 stind.ref " +
+        "ldelem.i1 ldelem.u1 ldelem.i2 ldelem.u2 ldelem.i4 ldelem.u4 ldelem.i8 ldelem.r4 ldelem.r8 ldelem.ref " +
+        "stelem.i1 stelem.i2 stelem.i4 stelem.i8 stelem.r4 stelem.r8 stelem.ref " +
+        "ldind.i1 ldind.u1 ldind.i2 ldind.u2 ldind.i4 ldind.u4 ldind.i8 ldind.r4 ldind.r8 ldind.ref stind.i1 stind.i2 stind.i4 stind.i8 stind.r4 stind.r8 stind.ref " +
         "ldobj stobj cpobj initobj constrained. box unbox unbox.any castclass isinst throw rethrow leave endfinally").Split(' ', StringSplitOptions.RemoveEmptyEntries));
     private static readonly HashSet<string> Conversions = new(BuildConversions());
     public static IReadOnlyCollection<string> SupportedOpcodes => Supported.Concat(Conversions).Order().ToArray();
@@ -24,7 +24,7 @@ public static partial class CompilerAnalysis
         {
             yield return "conv." + type; yield return "conv.ovf." + type; yield return "conv.ovf." + type + ".un";
         }
-        yield return "conv.r8"; yield return "conv.r.un";
+        yield return "conv.r4"; yield return "conv.r8"; yield return "conv.r.un";
     }
 
     public static CompilationAnalysis Analyze(AssemblyModel input)
@@ -73,6 +73,7 @@ public static partial class CompilerAnalysis
             }
             foreach (var i in method.Instructions)
             {
+                if (i.Op == "ldtoken" && i.Operand is not FieldReference) Error("TR2013", "Type/method tokens require reflection metadata support.", i.Offset);
                 if (!Supported.Contains(i.Op) && !Conversions.Contains(i.Op)) Error("TR2001", $"Opcode '{i.Op}' is not supported by portable-mvp.", i.Offset);
                 if (i.Operand is MethodReference call)
                 {
@@ -93,6 +94,14 @@ public static partial class CompilerAnalysis
                 }
                 if (i.Operand is FieldReference field)
                 {
+                    if (i.Op == "ldtoken")
+                    {
+                        if (image.Resolve(field) is not { IsStatic: true, InitialData: not null })
+                            Error("TR2013", "Only initialized static field handles are supported by ldtoken.", i.Offset);
+                        continue;
+                    }
+                    if (image.Resolve(field)?.InitialData is not null)
+                        Error("TR2013", "RVA storage may only be consumed through a checked field handle.", i.Offset);
                     Type(field.FieldType, i.Offset); EnqueueType(field.Type);
                     if (image.Resolve(field) is not { } definition) Error("TR2007", $"External field '{field.Key}' is not linked.", i.Offset);
                     else if (definition.IsLiteral || definition.IsStatic != (i.Op is "ldsfld" or "stsfld" or "ldsflda"))
@@ -154,7 +163,7 @@ public static partial class CompilerAnalysis
         if (type.EndsWith("[]", StringComparison.Ordinal)) return SupportedType(image, type[..^2], depth + 1);
         if (DelegateContracts.IsDelegate(type, image) || RuntimeContracts.IsWeakReference(type)) return true;
         if (type is "System.Delegate" or "System.MulticastDelegate" or "System.IntPtr") return true;
-        if (CliTypes.IsPrimitive(type) || type is "System.String" or "System.Object" or "System.ValueType" or "System.Enum" || IntrinsicCatalog.ExceptionTypes.Contains(type)) return true;
+        if (CliTypes.IsPrimitive(type) || type is "System.Array" or "System.RuntimeFieldHandle" or "System.String" or "System.Object" or "System.ValueType" or "System.Enum" || IntrinsicCatalog.ExceptionTypes.Contains(type)) return true;
         var t = image.FindType(type);
         return t is { GenericArity: 0, ExplicitLayout: false } &&
             (t.BaseType is null || SupportedType(image, t.BaseType, depth + 1));

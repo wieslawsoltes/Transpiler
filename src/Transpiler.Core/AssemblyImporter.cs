@@ -81,6 +81,7 @@ public static class AssemblyImporter
                 OperandType.InlineString => reader.GetUserString(MetadataTokens.UserStringHandle(token & 0x00ffffff)),
                 OperandType.InlineMethod => Method(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineField => Field(MetadataTokens.EntityHandle(token)),
+                OperandType.InlineTok when MetadataTokens.EntityHandle(token).Kind == HandleKind.FieldDefinition => Field(MetadataTokens.EntityHandle(token)),
                 OperandType.InlineType => provider.TypeName(MetadataTokens.EntityHandle(token)),
                 _ => token
             };
@@ -101,6 +102,26 @@ public static class AssemblyImporter
             var types = new List<TypeDefinitionModel>();
             var methods = new List<MethodDefinitionModel>();
             var fields = new List<FieldDefinitionModel>();
+            var totalData = 0;
+            byte[]? ReadData(FieldDefinition field)
+            {
+                var rva = field.GetRelativeVirtualAddress();
+                if (rva == 0) return null;
+                var type = field.DecodeSignature(provider, null);
+                var size = type switch
+                {
+                    "System.Boolean" or "System.Byte" or "System.SByte" => 1,
+                    "System.Char" or "System.Int16" or "System.UInt16" => 2,
+                    "System.Int32" or "System.UInt32" or "System.Single" => 4,
+                    "System.Int64" or "System.UInt64" or "System.Double" => 8,
+                    _ => reader.TypeDefinitions.Where(h => provider.TypeName(h) == type)
+                        .Select(h => reader.GetTypeDefinition(h).GetLayout().Size).FirstOrDefault()
+                };
+                if (size <= 0 || size > 16 * 1024 * 1024 || totalData > 64 * 1024 * 1024 - size)
+                    throw new CompilationException(new Diagnostic("TR1020", "Field-RVA layout is unknown or exceeds the 16 MiB field / 64 MiB assembly data budget."));
+                totalData += size;
+                return pe.GetSectionData(rva).GetContent(0, size).ToArray();
+            }
             foreach (var handle in reader.TypeDefinitions)
             {
                 var type = reader.GetTypeDefinition(handle);
@@ -131,7 +152,7 @@ public static class AssemblyImporter
                 {
                     var definition = reader.GetFieldDefinition(f);
                     fields.Add(new(Field(f), (definition.Attributes & FieldAttributes.Static) != 0,
-                        (definition.Attributes & FieldAttributes.Literal) != 0, null));
+                        (definition.Attributes & FieldAttributes.Literal) != 0, null) { InitialData = ReadData(definition) });
                 }
                 foreach (var m in type.GetMethods())
                 {

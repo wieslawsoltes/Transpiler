@@ -9,6 +9,8 @@
     <EmbeddedResource Include="Runtime/services.py" LogicalName="Transpiler.Runtime.Python.Services" />
     <EmbeddedResource Include="Runtime/values.mjs" LogicalName="Transpiler.Runtime.JavaScript.Values" />
     <EmbeddedResource Include="Runtime/values.py" LogicalName="Transpiler.Runtime.Python.Values" />
+    <EmbeddedResource Include="Runtime/numeric.mjs" LogicalName="Transpiler.Runtime.JavaScript.Numeric" />
+    <EmbeddedResource Include="Runtime/numeric.py" LogicalName="Transpiler.Runtime.Python.Numeric" />
     <EmbeddedResource Include="Runtime/NOTICE.txt" LogicalName="Transpiler.Runtime.DotNetNotice" />
   </ItemGroup>
 </Project>

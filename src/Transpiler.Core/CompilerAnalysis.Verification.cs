@@ -55,20 +55,23 @@ public static partial class CompilerAnalysis
             else if (op == "starg" || op == "stloc") Expect(Kind(Slot(op == "starg" ? args : method.Locals)));
             else if (op == "ldc.i4") Push("i4");
             else if (op == "ldc.i8") Push("i8");
-            else if (op is "ldc.r8" or "ldc.r4") Push("f");
+            else if (op == "ldc.r8") Push("f");
+            else if (op == "ldc.r4") Push("f4");
+            else if (op == "ldtoken") Push("fieldhandle");
+            else if (op == "ckfinite") { var kind = Pop(); if (kind is not ("f" or "f4")) Fail("ckfinite requires floating-point input.", pc); Push(kind); }
             else if (op is "ldnull" or "ldstr") Push("o");
             else if (op == "dup") { var v = Pop(); Push(v); Push(v); }
             else if (op == "pop") Pop();
             else if (Conversions.Contains(op))
             {
-                var v = Pop(); if (v is not ("i4" or "i8" or "f")) Fail("Numeric conversion on a non-number.", pc);
-                if (v == "f" && op is not ("conv.r8" or "conv.r.un") && !op.Contains(".ovf", StringComparison.Ordinal))
+                var v = Pop(); if (v is not ("i4" or "i8" or "f" or "f4")) Fail("Numeric conversion on a non-number.", pc);
+                if (v is "f" or "f4" && op is not ("conv.r4" or "conv.r8" or "conv.r.un") && !op.Contains(".ovf", StringComparison.Ordinal))
                     Fail("Unchecked floating-to-integer conversion requires a target-specific undefined-range policy; use checked conversion in portable-mvp.", pc);
-                Push(op is "conv.r8" or "conv.r.un" ? "f" : op.Contains("i8", StringComparison.Ordinal) || op.Contains("u8", StringComparison.Ordinal) ? "i8" : "i4");
+                Push(op == "conv.r4" ? "f4" : op is "conv.r8" or "conv.r.un" ? "f" : op.Contains("i8", StringComparison.Ordinal) || op.Contains("u8", StringComparison.Ordinal) ? "i8" : "i4");
             }
             else if (op is "neg" or "not")
             {
-                var v = Pop(); if (v is not ("i4" or "i8" or "f") || (v == "f" && op == "not")) Fail("Invalid unary operand.", pc); Push(v);
+                var v = Pop(); if (v is not ("i4" or "i8" or "f" or "f4") || (v is "f" or "f4" && op == "not")) Fail("Invalid unary operand.", pc); Push(v);
             }
             else if (op is "ldftn" or "ldvirtftn")
             { if (op == "ldvirtftn") Expect("o"); Push("fn"); }
@@ -135,8 +138,8 @@ public static partial class CompilerAnalysis
                 var compare = op is "ceq" or "cgt" or "cgt.un" or "clt" or "clt.un" || i.Code.FlowControl == FlowControl.Cond_Branch;
                 if (op is "shl" or "shr" or "shr.un")
                 { if (left is not ("i4" or "i8") || right != "i4") Fail("Invalid shift operands.", pc); }
-                else if (left != right || (!compare && left is not ("i4" or "i8" or "f"))) Fail("Incompatible arithmetic/comparison operands.", pc);
-                if (left == "f" && !compare && op is not ("add" or "sub" or "mul" or "div" or "rem")) Fail("Invalid floating-point operation.", pc);
+                else if (left != right || (!compare && left is not ("i4" or "i8" or "f" or "f4"))) Fail("Incompatible arithmetic/comparison operands.", pc);
+                if (left is "f" or "f4" && !compare && op is not ("add" or "sub" or "mul" or "div" or "rem")) Fail("Invalid floating-point operation.", pc);
                 if (left == "o" && compare && op is not ("ceq" or "beq" or "bne.un" or "cgt.un")) Fail("Ordered object comparisons are outside portable-mvp.", pc);
                 if (op is "ceq" or "cgt" or "cgt.un" or "clt" or "clt.un") Push("i4");
                 else if (!compare) Push(left);
@@ -154,7 +157,7 @@ public static partial class CompilerAnalysis
     public static string ElementType(Instruction i) => i.Operand is string t ? t : i.Op[(i.Op.IndexOf('.') + 1)..] switch
     {
         "i1" => "System.SByte", "u1" => "System.Byte", "i2" => "System.Int16", "u2" => "System.UInt16",
-        "i4" => "System.Int32", "u4" => "System.UInt32", "i8" => "System.Int64", "r8" => "System.Double", "ref" => "System.Object",
+        "i4" => "System.Int32", "u4" => "System.UInt32", "i8" => "System.Int64", "r4" => "System.Single", "r8" => "System.Double", "ref" => "System.Object",
         _ => throw new CompilationException(new Diagnostic("TR2101", $"Unknown element type for {i.Op}."))
     };
 }

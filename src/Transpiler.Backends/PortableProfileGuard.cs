@@ -33,7 +33,7 @@ internal static class PortableProfileGuard
                 {
                     Type(field.Type); Type(field.FieldType);
                     var staticAccess = instruction.Op is "ldsfld" or "stsfld" or "ldsflda";
-                    if (definition.IsStatic != staticAccess)
+                    if (instruction.Op != "ldtoken" && definition.IsStatic != staticAccess)
                         errors.Add(new("TR2212", "Field access does not match its static/instance storage kind.", method.Key, instruction.Offset));
                 }
             }

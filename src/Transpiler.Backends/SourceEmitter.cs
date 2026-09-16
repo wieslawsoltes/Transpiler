@@ -43,18 +43,21 @@ public static class SourceEmitter
         using var values = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + ".Values")!;
         using var valuesReader = new StreamReader(values, Encoding.UTF8);
         output.AppendLine(valuesReader.ReadToEnd());
+        using var numeric = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + ".Numeric")!;
+        using var numericReader = new StreamReader(numeric, Encoding.UTF8);
+        output.AppendLine(numericReader.ReadToEnd());
         if (python)
         {
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = ValueRuntime(metadata)");
+            output.AppendLine("R = NumericRuntime(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new ValueRuntime(metadata);");
+            output.AppendLine("const R = new NumericRuntime(metadata);");
         }
         var count = 0;
         foreach (var method in analysis.Methods)
@@ -139,14 +142,22 @@ public static class SourceEmitter
             else if (op is "starg" or "stloc")
             {
                 var index = (int)i.Operand!;
-                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? argumentTypes : method.Locals)[index])})");
+                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? "a" : "l") == "a" ? argumentTypes[index] : method.Locals[index])})");
             }
+            else if (op == "ldtoken") Push($"R.data_handle({Quote(((FieldReference)i.Operand!).Key)})");
+            else if (op == "ckfinite") Push("R.finite(s.pop())");
             else if (op.StartsWith("ldc.", StringComparison.Ordinal)) Push(Number(i.Operand!, python));
             else if (op == "ldnull") Push(nullValue);
             else if (op == "ldstr") Push($"R.string({Quote((string)i.Operand!)}, {Bool(true, python)})");
             else if (op == "dup") Push(python ? "R.copy_value(s[-1])" : "R.copy_value(s[s.length - 1])");
             else if (op == "pop") Line("s.pop()");
-            else if (op.StartsWith("conv.", StringComparison.Ordinal)) Push($"R.convert({Quote(op)}, s.pop(), {Quote(Kind(1))})");
+            else if (op.StartsWith("conv.", StringComparison.Ordinal))
+            {
+                // Fuse adjacent unsigned widening + binary32 narrowing: avoid double rounding of UInt64.
+                var conversion = op == "conv.r.un" && method.Instructions.Any(n => n.Offset == i.NextOffset && n.Op == "conv.r4")
+                    ? "conv.r4.from-unsigned" : op;
+                Push($"R.convert({Quote(conversion)}, s.pop(), {Quote(Kind(1))})");
+            }
             else if (op is "neg" or "not") Push($"R.unary({Quote(op)}, s.pop(), {Quote(Kind(1))})");
             else if (op is "ldftn" or "ldvirtftn")
             {

@@ -25,7 +25,7 @@ public static class IntrinsicCatalog
         var d = new Dictionary<string, string>(StringComparer.Ordinal);
         void Add(string type, string name, string result, string[] parameters, string intrinsic, bool instance = false) =>
             d.Add($"{type}::{name}({string.Join(",", parameters)})->{result}" + (instance ? ":instance" : ":static"), intrinsic);
-        foreach (var type in new[] { "System.Boolean", "System.Char", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64", "System.Double", "System.String", "System.Object" })
+        foreach (var type in new[] { "System.Boolean", "System.Char", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64", "System.Single", "System.Double", "System.String", "System.Object" })
         {
             Add("System.Console", "WriteLine", "System.Void", [type], "console.line");
             Add("System.Console", "Write", "System.Void", [type], "console.write");
@@ -50,7 +50,7 @@ public static class IntrinsicCatalog
             Add(type, ".ctor", "System.Void", ["System.String"], "exception.ctor", true);
         }
         Add("System.Exception", "get_Message", "System.String", [], "exception.message", true);
-        foreach (var type in new[] { "System.Boolean", "System.Char", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64", "System.Double" })
+        foreach (var type in new[] { "System.Boolean", "System.Char", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64", "System.Single", "System.Double" })
             Add(type, "ToString", "System.String", [], "primitive.string", true);
         foreach (var type in new[] { "System.Int32", "System.Int64", "System.Double" })
         {
