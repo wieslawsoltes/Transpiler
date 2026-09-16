@@ -7,6 +7,7 @@ namespace Transpiler.Bcl;
 /// <summary>Portable managed implementation; every method is compiled from this IL for each backend.</summary>
 public class List<T> : IList<T>, IReadOnlyList<T>
 {
+    public ReadOnlyCollection<T> AsReadOnly() => new ReadOnlyCollection<T>(this);
     private T[] _items;
     private int _count;
     private int _version;

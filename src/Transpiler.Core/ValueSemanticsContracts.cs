@@ -7,6 +7,8 @@ public static class ValueSemanticsContracts
     public static bool IsObjectOverride(MethodDefinitionModel method) => method.IsVirtual && !method.NewSlot && IsObjectShape(method.Reference);
     public static bool IsObjectShape(MethodReference m) => m.Instance && m.GenericArity == 0 && m.GenericArguments.Length == 0 &&
         ((m.Name == "ToString" && m.ReturnType == "System.String" && m.Parameters.Length == 0) ||
+         (m.Name == "get_Message" && m.ReturnType == "System.String" && m.Parameters.Length == 0) ||
+         (m.Name == "GetBaseException" && m.ReturnType == "System.Exception" && m.Parameters.Length == 0) ||
          (m.Name == "GetHashCode" && m.ReturnType == "System.Int32" && m.Parameters.Length == 0) ||
          (m.Name == "Equals" && m.ReturnType == "System.Boolean" && m.Parameters.SequenceEqual(new[] { "System.Object" })));
 

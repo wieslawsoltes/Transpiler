@@ -34,30 +34,25 @@ public static class SourceEmitter
             foreach (var line in noticeReader.ReadToEnd().Split('\n')) output.AppendLine((python ? "# " : "// ") + line);
         }
         output.AppendLine(reader.ReadToEnd());
-        using var extension = typeof(SourceEmitter).Assembly.GetManifestResourceStream(python ? "Transpiler.Runtime.Python.Managed" : "Transpiler.Runtime.JavaScript.Managed")!;
-        using var extensionReader = new StreamReader(extension, Encoding.UTF8);
-        output.AppendLine(extensionReader.ReadToEnd());
-        using var services = typeof(SourceEmitter).Assembly.GetManifestResourceStream(python ? "Transpiler.Runtime.Python.Services" : "Transpiler.Runtime.JavaScript.Services")!;
-        using var servicesReader = new StreamReader(services, Encoding.UTF8);
-        output.AppendLine(servicesReader.ReadToEnd());
-        using var values = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + ".Values")!;
-        using var valuesReader = new StreamReader(values, Encoding.UTF8);
-        output.AppendLine(valuesReader.ReadToEnd());
-        using var numeric = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + ".Numeric")!;
-        using var numericReader = new StreamReader(numeric, Encoding.UTF8);
-        output.AppendLine(numericReader.ReadToEnd());
+        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions" })
+        {
+            using var layerStream = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + layer)
+                ?? throw new InvalidOperationException($"Missing embedded runtime layer: {layer}");
+            using var layerReader = new StreamReader(layerStream, Encoding.UTF8);
+            output.AppendLine(layerReader.ReadToEnd());
+        }
         if (python)
         {
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = NumericRuntime(metadata)");
+            output.AppendLine("R = ExceptionRuntime(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new NumericRuntime(metadata);");
+            output.AppendLine("const R = new ExceptionRuntime(metadata);");
         }
         var count = 0;
         foreach (var method in analysis.Methods)
@@ -94,7 +89,7 @@ public static class SourceEmitter
         if (value is long integer) return integer.ToString(CultureInfo.InvariantCulture) + (python ? "" : "n");
         if (value is double d)
         {
-            if (double.IsNaN(d)) return python ? "float('nan')" : "NaN";
+            if (double.IsNaN(d)) return "R.nan(" + Bool(BitConverter.DoubleToInt64Bits(d) < 0, python) + ")";
             if (double.IsPositiveInfinity(d)) return python ? "float('inf')" : "Infinity";
             if (double.IsNegativeInfinity(d)) return python ? "-float('inf')" : "-Infinity";
             if (d == 0 && BitConverter.DoubleToInt64Bits(d) < 0) return "-0.0";
@@ -142,7 +137,7 @@ public static class SourceEmitter
             else if (op is "starg" or "stloc")
             {
                 var index = (int)i.Operand!;
-                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? "a" : "l") == "a" ? argumentTypes[index] : method.Locals[index])})");
+                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? argumentTypes : method.Locals)[index])})");
             }
             else if (op == "ldtoken") Push($"R.data_handle({Quote(((FieldReference)i.Operand!).Key)})");
             else if (op == "ckfinite") Push("R.finite(s.pop())");

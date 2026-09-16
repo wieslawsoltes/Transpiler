@@ -6,6 +6,9 @@ class CliDataHandle:
 
 class NumericRuntime(ValueRuntime):
     @staticmethod
+    def nan(negative): return -float('nan') if negative else float('nan')
+
+    @staticmethod
     def f32(value):
         try: return _struct.unpack('<f', _struct.pack('<f', float(value)))[0]
         except OverflowError: return math.copysign(float('inf'), value)
@@ -75,7 +78,7 @@ class NumericRuntime(ValueRuntime):
         return CliDataHandle(bytes(data))
 
     def initialize_data(self, array, handle):
-        self.nonnull(array)
+        if array is None: self.fail('System.ArgumentNullException', 'Array cannot be null.')
         if not isinstance(array, CliArray) or not isinstance(handle, CliDataHandle): self.fail('System.ArgumentException', 'Invalid array initialization arguments.')
         element = self.meta['types'].get(array.element, {}).get('enumType') or array.element
         encodings = {'System.Boolean':'B','System.SByte':'b','System.Byte':'B','System.Char':'H',

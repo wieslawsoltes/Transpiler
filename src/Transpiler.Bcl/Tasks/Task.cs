@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
 namespace Transpiler.Bcl.Tasks;
 
 /// <summary>Single-threaded FIFO continuation service. This is not a thread pool or a wall-clock timer.</summary>
@@ -13,7 +14,7 @@ public static class Scheduler
 }
 
 /// <summary>Portable completion/continuation state. Every algorithm is translated from this managed IL.</summary>
-public class Task
+public partial class Task
 {
     private int _state; // 0 pending, 1 succeeded, 2 faulted, 3 canceled.
     private Exception? _error;
@@ -39,10 +40,11 @@ public class Task
         if (continuation == null) throw new ArgumentNullException(nameof(continuation));
         if (IsCompleted) Scheduler.Post(continuation); else _continuations.Add(continuation);
     }
-    protected internal bool Finish(int state, Exception? error)
+    protected internal bool Finish(int state, Exception? error, Exception[]? errors = null)
     {
         if (IsCompleted) return false;
-        _error = error; _state = state;
+        _error = error; _errors = state == 2 ? errors ?? new[] { error! } : null; _state = state;
+        NotifyObservers();
         for (int i = 0; i < _continuations.Count; i++) Scheduler.Post(_continuations[i]);
         _continuations.Clear(); return true;
     }
@@ -53,11 +55,15 @@ public class Task
     }
     internal void SetAsyncException(Exception error)
     { if (error == null) throw new ArgumentNullException(nameof(error)); Finish(error is OperationCanceledException ? 3 : 2, error); }
-    internal void GetCompletion()
+    internal void WaitCompletion()
     {
         int budget = 100000;
         while (!IsCompleted)
             if (--budget == 0 || !Scheduler.RunOne()) throw new InvalidOperationException("The cooperative task cannot make progress; no host completion is available.");
+    }
+    internal void GetCompletion()
+    {
+        WaitCompletion();
         if (_error != null) throw _error;
     }
 }
@@ -68,6 +74,7 @@ public class Task<T> : Task
     internal bool Complete(T result)
     { if (IsCompleted) return false; _result = result; return Finish(1, null); }
     internal T GetValue() { GetCompletion(); return _result; }
+    public T Result { get { Wait(); return _result; } }
     public new TaskAwaiter<T> GetAwaiter() => new TaskAwaiter<T>(this);
     public new ConfiguredTaskAwaitable<T> ConfigureAwait(bool continueOnCapturedContext) => new ConfiguredTaskAwaitable<T>(this);
 }
@@ -82,6 +89,9 @@ public sealed class TaskCompletionSource<T>
     public bool TrySetException(Exception error) => _task.Fail(error);
     public void SetException(Exception error)
     { if (!TrySetException(error)) throw new InvalidOperationException("The task is already complete."); }
+    public bool TrySetException(IEnumerable<Exception> exceptions) => _task.FailSequence(exceptions);
+    public void SetException(IEnumerable<Exception> exceptions)
+    { if (!TrySetException(exceptions)) throw new InvalidOperationException("The task is already complete."); }
     public bool TrySetCanceled() => _task.Finish(3, new System.Threading.Tasks.TaskCanceledException());
     public void SetCanceled()
     { if (!TrySetCanceled()) throw new InvalidOperationException("The task is already complete."); }

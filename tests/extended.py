@@ -112,7 +112,7 @@ def boundaries(h):
         'resurrection':'var w=new System.WeakReference<object>(new object(),true);',
         'thread-pool':'System.Threading.Tasks.Task.Run(()=>42).GetAwaiter().GetResult();',
         'delay':'System.Threading.Tasks.Task.Delay(1).GetAwaiter().GetResult();',
-        'unsupported-list-member':'var l=new System.Collections.Generic.List<int>();l.AsReadOnly();',
+        'unsupported-continuation':'System.Threading.Tasks.Task.CompletedTask.ContinueWith(t=>42);',
         'reflection':'System.Console.WriteLine(typeof(Program).Name);',
     }
     for name,statement in samples.items():
@@ -126,7 +126,9 @@ def boundaries(h):
 
 def register(h):
     import runtime_batch
+    import composition_batch
     runtime_batch.register(h)
+    composition_batch.register(h)
     h.record('linking/three-assembly-graph',lambda:graph(h))
     h.record('bcl/provenance',lambda:provenance(h))
     h.record('host/async-and-roots',lambda:async_host(h))

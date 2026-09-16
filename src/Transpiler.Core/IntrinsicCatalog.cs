@@ -49,6 +49,9 @@ public static class IntrinsicCatalog
             Add(type, ".ctor", "System.Void", [], "exception.ctor", true);
             Add(type, ".ctor", "System.Void", ["System.String"], "exception.ctor", true);
         }
+        Add("System.Exception", ".ctor", "System.Void", ["System.String", "System.Exception"], "exception.ctor", true);
+        Add("System.Exception", "get_InnerException", "System.Exception", [], "exception.inner", true);
+        Add("System.Exception", "GetBaseException", "System.Exception", [], "exception.base", true);
         Add("System.Exception", "get_Message", "System.String", [], "exception.message", true);
         foreach (var type in new[] { "System.Boolean", "System.Char", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64", "System.Single", "System.Double" })
             Add(type, "ToString", "System.String", [], "primitive.string", true);
