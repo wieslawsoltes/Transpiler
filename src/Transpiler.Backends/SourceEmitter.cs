@@ -197,7 +197,7 @@ public static class SourceEmitter
             else if (op == "ret")
             { Line("return " + (method.Reference.ReturnType == "System.Void" ? nullValue : $"R.coerce(s.pop(), {Quote(method.Reference.ReturnType)})")); terminal = true; }
             else if (op == "br") { Jump(Number(i.Operand!, python)); terminal = true; }
-            else if (op == "brtrue" or op == "brfalse")
+            else if (op is "brtrue" or "brfalse")
             {
                 Pop("x"); var condition = op == "brtrue" ? "R.truth(x)" : (python ? "not R.truth(x)" : "!R.truth(x)");
                 Jump(Choice(condition, Number(i.Operand!, python), i.NextOffset.ToString(CultureInfo.InvariantCulture))); terminal = true;
