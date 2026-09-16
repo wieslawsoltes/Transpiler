@@ -25,6 +25,8 @@ public readonly struct ValueTask : IEquatable<ValueTask>
     public override int GetHashCode() => _task == null ? 0 : _task.GetHashCode();
     public static bool operator ==(ValueTask left, ValueTask right) => left.Equals(right);
     public static bool operator !=(ValueTask left, ValueTask right) => !left.Equals(right);
+    public static ValueTask FromCanceled(Threading.CancellationToken cancellationToken) => new ValueTask(Task.FromCanceled(cancellationToken));
+    public static ValueTask<T> FromCanceled<T>(Threading.CancellationToken cancellationToken) => new ValueTask<T>(Task.FromCanceled<T>(cancellationToken));
     public static ValueTask<T> FromResult<T>(T result) => new ValueTask<T>(result);
     public static ValueTask FromException(Exception exception) => new ValueTask(Task.FromException(exception));
     public static ValueTask<T> FromException<T>(Exception exception) => new ValueTask<T>(Task.FromException<T>(exception));

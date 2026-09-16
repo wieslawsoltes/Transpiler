@@ -43,6 +43,7 @@ public partial class Task
     protected internal bool Finish(int state, Exception? error, Exception[]? errors = null)
     {
         if (IsCompleted) return false;
+        if (state == 3 && error is OperationCanceledException canceled) Cancellation = canceled.CancellationToken;
         _error = error; _errors = state == 2 ? errors ?? new[] { error! } : null; _state = state;
         NotifyObservers();
         for (int i = 0; i < _continuations.Count; i++) Scheduler.Post(_continuations[i]);
@@ -92,7 +93,7 @@ public sealed partial class TaskCompletionSource<T>
     public bool TrySetException(IEnumerable<Exception> exceptions) => _task.FailSequence(exceptions);
     public void SetException(IEnumerable<Exception> exceptions)
     { if (!TrySetException(exceptions)) throw new InvalidOperationException("The task is already complete."); }
-    public bool TrySetCanceled() => _task.Finish(3, new TaskCanceledException());
+    public bool TrySetCanceled() => _task.Cancel(default);
     public void SetCanceled()
     { if (!TrySetCanceled()) throw new InvalidOperationException("The task is already complete."); }
 }
