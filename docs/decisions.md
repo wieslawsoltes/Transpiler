@@ -41,3 +41,11 @@ Do not approximate cross-frame filters with predicates after the host stack has 
 ## ADR-010 — Native source profiles have different runtime obligations: proposed
 
 Keep a restricted standard-library ownership C++ profile distinct from managed C++ output with collector/runtime services. Reusing a native collector requires its execution-engine contract, not merely linking a library. Neither C++ target is implemented here.
+
+## ADR-011 — Async streams are managed protocol implementations: accepted
+
+Implement IValueTaskSource, the reusable completion core, builder, configured enumeration and disposal in portable C#. Execute the real Roslyn-generated method bodies through the common pipeline. Do not replace iterator source with native host generator syntax. Native async-generator marshalling is a separate ABI feature.
+
+## ADR-012 — Single consumption and trace/context boundaries are explicit: accepted
+
+Source-backed values require token-aware single consumption; AsTask/Preserve provides repeatable Task-backed use. Clear callback state before invoking reentrant user code and test reset-on-consumption. Forward source flags without claiming execution-context capture. ExceptionDispatchInfo preserves the managed exception object only; exact .NET trace/remote-stack behavior remains unsupported.

@@ -1,82 +1,70 @@
-# Architecture — managed compiler, translated libraries and explicit runtime services
+# Current compiler architecture
 
-Updated 2026-09-16. Output metadata schema 2; compiler profile `portable-mvp`; optional library substitution policy `portable-bcl-v1`; reviewed original-body catalog `corelib-integer-v1`. These are implemented subsets, not universal CLI or complete .NET compatibility.
+Updated 2026-09-16 after recovery of `f87fe22` and the source-backed awaitable/async-stream implementation. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
 
-The detailed preceding design is archived in [0.2](history/0.2/architecture.md), and the initial design in [0.1](history/0.1/architecture.md). This page is the current architecture and supersedes their implementation-status statements. See [research](research/bcl-runtime-2026-09-16.md), [specification](specification.md) and [compatibility](compatibility.md).
-
-## Implemented pipeline
+## Pipeline and implementation origins
 
 ```text
-C# source -> Roslyn + selected .NET reference pack -> real PE/CIL
-Existing root DLL -------------------------------> metadata/CIL importer
-Explicit implementation DLLs --------------------> deterministic assembly linker
-Optional abstract interface contracts ----------> declaration-only metadata
-Portable C# BCL assembly -------------------------> explicit substitution policy
-Selected original CoreLib bodies ----------------> same linker and compiler
-                                                      |
-                                      bounded closed-generic specialization
-                                                      |
-                              reachability + stack states + definite local assignment
-                                                      |
-                                  exact capability checks + class/interface linkage
-                                                      |
-                                     JavaScript/Python source method emission
-                                                      |
-                                     target helpers + explicit host services
+C# -- Roslyn / selected reference pack --> real PE + CIL + metadata
+existing root DLL ----------------------> importer
+explicit implementation DLLs ----------> deterministic single-load-context linker
+selected abstract contracts -----------> declaration-only metadata
+portable BCL and reviewed CoreLib IL ---> explicit library binding
+                                            |
+                                  bounded closed specialization
+                                            |
+                        reachability + stack states + definite assignment
+                                            |
+                      protected-region CFG + exact capability validation
+                                            |
+                         class/interface/value/host-root linkage metadata
+                                            |
+                        instruction or basic-block source emission
+                                      /             \
+                            JavaScript helpers    Python helpers
 ```
 
-The canonical input is actual managed executable metadata and method bodies, not reconstructed C# syntax. Existing DLLs bypass source compilation but use the same semantics. Generated modules contain statically emitted methods, not their original DLL or a runtime instruction stream. The baseline backend uses source-level control-flow dispatch and evaluation stacks; CFG/SSA optimization and structured source recovery remain future work.
+Roslyn is a frontend, not the canonical intermediate representation. Existing DLLs do not need reconstructed C# source. Portable library algorithms and selected original CoreLib bodies go through the same importer and compiler. Host runtime primitives remain explicitly distinguished from translated methods in provenance manifests.
 
-## Physical modules
+## Module responsibilities
 
-| Module | Implemented role |
+| Project | Responsibility |
 |---|---|
-| Transpiler.Core | Import, scoped identities, explicit assembly linkage, substitutions, closed specialization, stack/local analysis and capability contracts |
-| Transpiler.Frontend.Roslyn | C# compilation, reference-pack inputs, PortableCompilation orchestration and reviewed upstream-body catalog |
-| Transpiler.Bcl | Original portable C# collection, LINQ/iterator, task, awaiter and builder algorithms |
-| Transpiler.Runtime.Managed | Independently linked logical-heap allocation/mark/sweep/handle algorithms in C# |
-| Transpiler.Backends | Shared source emission, linkage metadata, value/reference semantics, JS/Python helpers and host adapters |
-| Transpiler.Cli | Explicit inputs, profile options, diagnostics, analysis and method-origin manifests |
-| CompilerChecks / Python harness | Hand-authored control-flow checks, CoreCLR differential execution, ABI/provenance/rejection/graph gates |
+| Transpiler.Core | Import/identity/linking, substitutions, bounded specialization, stack/local/CFG checks and capability contracts |
+| Transpiler.Frontend.Roslyn | C# compilation, reference-pack discovery, PortableCompilation and reviewed original-body catalog |
+| Transpiler.Bcl | Independent C# library algorithms, including collections, tasks, cancellation and async stream protocols |
+| Transpiler.Runtime.Managed | Separately linked logical-heap algorithms; not the default collector |
+| Transpiler.Backends | Source generation, metadata, dispatch and layered target-runtime semantics |
+| Transpiler.Cli | Explicit inputs/options, diagnostics, manifests and target output |
 
-Neither managed-library project depends on source-printing/compiler implementation classes. The logical heap is not automatically linked or installed as the application's collector.
+Source binding and implementation binding remain separate. Reference assemblies cannot supply executable stubs. Identity checks permit one version per assembly simple name; complete forwarding, binding redirects, multi-load-context semantics and package restore are not implemented. Framework and portable-type normalization still use explicit policies, not a general loader.
 
-## Binding and provenance
+## Storage, types and dispatch
 
-Source compilation selects .NET 10 reference-pack contracts, not the compiler process's trusted platform assembly list. Implementation dependencies are explicit. Scoped application type names and requested assembly version/culture/public-key-token identity are preserved within a one-version-per-simple-name linking profile. Input ordering does not change output. This is not complete type-forwarding, binding-redirect, multi-load-context or MSBuild/NuGet resolution.
+Closed specialization retains constructed identities and per-instantiation statics within budgets. CliValue represents copied structs, CliRef storage addresses and CliBox boxed identity. Struct loads/stores/calls/returns copy; addresses remain aliases. Nullable has its own boxing rules. Dictionary/set/comparer algorithms use explicit equality/hash/order services and selected Object/ValueType virtual bridges.
 
-Reference assemblies cannot supply executable dependency bodies. The portable loader imports a narrow abstract-interface metadata set as contracts only. Its implementation assembly contains portable algorithms. LibrarySubstitution maps explicit portable type definitions to reviewed framework identities, while exact method signatures continue to constrain resolution.
+Class slots distinguish overrides from newslot. Interface linkage handles the tested implicit/explicit MethodImpl and variance combinations. Delegates retain receiver/method identity. Generic constraints, default-interface/GVM combinations and byref lifetimes are not fully certified.
 
-UpstreamBclCatalog imports 21 original integer Math bodies from real CoreLib. Required definitions must exist and contain managed IL. Imported bodies win over otherwise available runtime intrinsics; their reachable dependencies still undergo normal capability analysis. Manifests distinguish emitted assembly bodies from external bindings and retain input hashes. Upstream-generated derivatives include the .NET notice.
+Target runtime layers cover the base semantic model, managed storage, host services, value semantics, binary32/RVA numeric operations, exceptions and arrays. Rectangular arrays retain lengths/lower bounds and checked row-major storage. Opaque type handles support limited identity/array-shape operations, not arbitrary member reflection.
 
-## Specialization, storage and dispatch
+## Control flow and source lowering
 
-Closed generic specialization substitutes type and method contexts, preserves constructed type identity and separates static storage. It has explicit expansion budgets. Host-invoked array enumerators and async-adapter methods become roots before pruning; ordinary direct-call reachability alone would miss them.
+The analyzer exposes CilControlFlowGraph with explicit blocks, normal edges and conservative exceptional/leave edges. It validates instruction/prefix boundaries and selected protected-region transfer rules. DefiniteLocalAssignment proves normal-flow initialization for methods without InitLocals; exceptional/address-first initialization remains conservative.
 
-CliValue models copied struct values. CliRef models storage locations. Struct load/store/argument/return/boxing paths copy, while field addresses retain parent storage identity even when the containing struct is reassigned. Enum storage and tested formatting are separate from reference-type identity.
+Instruction dispatch emits a case per reachable instruction. Block dispatch coalesces straight-line source into validated blocks without removing managed checks or losing the IL offset needed for an exception. Neither mode executes a serialized IL stream. Block dispatch is not SSA, stack elimination, devirtualization or general structured-source recovery. Both remain gated against the same DLL oracle.
 
-Class slots distinguish overrides from newslot. Interface linkage handles tested implicit/explicit MethodImpl and variance cases. Constrained receivers preserve mutable value storage. Delegates carry translated method/receiver identity and immutable invocation sequences; closure bodies remain ordinary translated methods. Full generic constraints, all interface/default-method combinations, arbitrary external virtual bridges and unmanaged calli are not certified.
+## Awaitable and iterator protocols
 
-## Verification boundary
+Tasks, composition, completion sources and cancellation are translated managed algorithms with a cooperative FIFO. ValueTask can contain an inline result, Task or IValueTaskSource plus token. The completion core supports reusable sequential operations and clears callback/state before user continuation. AsTask consumes a source once; a Task-backed preserved value can then be reused.
 
-Typed stack states are propagated to a fixed point and joins must match. Methods without InitLocals now have a separate must-be-assigned analysis: intersect local sets at normal-flow joins, then reject reads/address acquisition lacking a store on every path. Exception-region initialization and address-based first writes are deliberately outside that proof. Backend profile guards also reject implicit finalization and unsupported external overrides.
+Async iterators are actual Roslyn-generated classes and method bodies. Portable IAsyncEnumerable/IAsyncEnumerator/IAsyncDisposable, AsyncIteratorMethodBuilder, completion-core and configured-enumeration implementations satisfy their dependencies. No compiler syntax shortcut or native generator substitution is used. Awaited finally/disposal and linked cancellation remain ordinary imported IL behavior.
 
-This is still not a complete ECMA verifier or security boundary. Exceptional region-transfer rules, byref lifetimes, object subtype proofs and hostile-metadata/resource hardening need additional work.
+ExceptionDispatchInfo preserves the exception object for generated cleanup paths, not .NET stack traces. Exception filters still require a separate correct cross-frame search-before-unwind protocol and are rejected. Forwarded source continuation flags do not imply context capture, threading or timer support.
 
-## Async and exceptions
+Host-invoked Task/ValueTask operations are explicit roots before pruning. invokeAsync/invoke_async adapts supported results and drives the queue. Native async-generator marshalling is not delivered; an exported Task can consume a managed stream. Step budgets are not execution preemption.
 
-Portable tasks/builders/awaiters and the FIFO scheduler are managed C# methods. Actual Roslyn Release/Debug state machines execute through normal IL lowering. JavaScript invokeAsync and Python invoke_async adapt linked task results and cooperatively drive the queue, with a bounded number of pump steps. The budget does not interrupt an infinite managed call or cancel an underlying task.
+## Heap boundaries and evolution
 
-The scheduling profile has no thread pool, wall-clock timers, SynchronizationContext/ExecutionContext or full cancellation-token semantics. Task.Run/Delay remain rejected. Non-filter exception handling uses explicit handler/finally continuations. Cross-frame two-pass filter search remains a distinct unimplemented subsystem.
+Ordinary generated objects use host GC. Weak references, identity hashes, KeepAlive and explicit root handles have declared host semantics. LogicalHeap owns only its independent payloads and explicit roots. A general logical/native collector profile requires compiler-created descriptors, roots, safepoints, interior-reference ownership and barriers.
 
-## Two implemented heap boundaries, one future native boundary
-
-**Default host heap:** managed wrappers are JS/Python objects. HostedRuntime supplies explicit strong roots, weak references, identity hashes and output/async integration. JS KeepAlive uses the ECMAScript kept-alive mechanism, not an empty helper. Runtime information reports unsupported forced collection, managed finalizers and pinning. Root release is not deterministic destruction.
-
-**Optional logical heap:** Transpiler.Runtime.Managed owns logical byte/reference payloads and bounded object/handle tables. Its C# collector traces explicit strong roots, clears weak targets, sweeps cycles and checks allocation generations. Host-local HeapReference wrappers are not logical roots. The tested collector is separate from ordinary generated objects; [its contract](logical-heap.md) describes all invariants and limitations.
-
-**Future native heap:** a cpp-managed backend could implement/adapt collector execution-engine contracts. It would need descriptors, barriers, frame/static/exception/task/interop roots and safepoints. A restricted std-only C++ ownership profile must remain separate. Neither C++ backend is delivered here.
-
-## Evolution
-
-Keep the reference dispatcher as an oracle while introducing explicit managed HIR/CFG, exception edges, storage/value separation and effects for throw/allocation/initialization/mutation/callback/suspension. Prioritize library-enabling semantics and measured optimizations over additional shallow target printers. The updated [implementation plan](implementation-plan.md) states remaining milestones and acceptance gates.
+Next compiler work is structured identity/loader policy, effect-aware managed HIR/CFG/SSA, stronger exception/byref verification and explicit host capabilities. Broad reflection/dynamic code and C++ are separate milestones. See [specification](specification.md), [async contracts](async-streams.md) and [implementation plan](implementation-plan.md).

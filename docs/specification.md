@@ -1,103 +1,68 @@
-# Current portable compiler specification
+# Portable compiler specification
 
-Updated 2026-09-16. Generated metadata schema **2**; compiler profile **portable-mvp**; optional BCL policy **portable-bcl-v1**; original-body catalog **corelib-integer-v1**. The preceding detailed specification is retained in [history/0.2](history/0.2/specification.md); this document supersedes its status and original-method inventory.
+Updated 2026-09-16 after the async-stream continuation. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
 
-## Inputs, output and CLI
+## Inputs, binding and CLI
 
-Input is one root managed DLL or C# files compiled into it. Repeatable --reference options supply implementation DLLs. Roslyn binds framework source APIs against a selected .NET 10 reference pack. The compiler does not execute input initializers, use Assembly.Load for import or probe a network for missing dependencies.
+Input is C# source files or one root managed assembly. Repeatable implementation DLLs are supplied with --reference. Roslyn uses the selected .NET 10 reference pack for source contracts. Reference metadata is not executable implementation IL. Import does not execute module initializers or retrieve dependencies over a network.
 
-Output is standalone .mjs or .py source, including required semantic helpers and translated method bodies. Generated programs need their target runtime, not .NET. CI uses Node 22 and Python 3.13; browser hosting is not yet a qualified matrix.
+Commands: compile, emit-pe, inspect, analyze and capabilities.
 
-```bash
-dotnet build Transpiler.slnx -c Release
-CLI=src/Transpiler.Cli/bin/Release/net10.0/Transpiler.Cli.dll
+| Option | Meaning |
+|---|---|
+| --target js / py | JavaScript ES module or Python source |
+| --out / -o | Target file |
+| --reference / -r | Explicit implementation dependency; repeatable |
+| --bcl portable / none | Select portable library substitutions and reviewed upstream bodies; default none |
+| --reference-pack / --corelib | Explicit framework contract directory / original implementation assembly |
+| --library / --debug | Library roots / Debug source optimization |
+| --dispatch instruction / block | Reference instruction mode (default) or validated basic-block coalescing |
+| --ir / --manifest / --diagnostics | Analysis, input/method provenance and structured diagnostics |
 
-dotnet "$CLI" compile samples/PortableBcl.cs --bcl portable \
-  --target js --out artifacts/bcl.mjs --manifest artifacts/bcl.json
-node artifacts/bcl.mjs
+Exit status is 0 success, 1 compilation/capability rejection, 2 usage/file failure. Successful target writes replace via a temporary file. Failure does not delete an older file at that path; callers must check status. Sidecar writes are not one multi-file transaction.
 
-dotnet "$CLI" compile samples/PortableBcl.cs --bcl portable \
-  --target py --out artifacts/bcl.py
-python3 artifacts/bcl.py
-```
+Linking is single-load-context with one version per assembly simple name and explicit inputs. It checks requested identities and rejects conflicting/reference-only implementation inputs. It is not general forwarding, multi-version binding or automatic package restore. Executable entry points and eligible public static root-library methods are roots; open generic exports require further design.
 
-Commands remain compile, emit-pe, inspect, analyze and capabilities. Options: --target js|py, --out/-o, --reference/-r, --library, --debug, --bcl portable|none, --reference-pack directory, --corelib implementation.dll, --ir, --manifest and --diagnostics. Defaults use no portable BCL, Release source compilation and installed .NET 10 reference-pack discovery. --reference-pack and --corelib allow explicit inputs. No .csproj/source-generator/NuGet graph driver is provided yet.
+Selected budgets remain 256 modules, 16,384 specialized methods, 4,096 constructed types and 4,096 characters per constructed identity. CFG validation limits exception clauses to 512. These are not complete process resource quotas.
 
-Exit codes are 0 for success, 1 for managed compilation/capability rejection and 2 for usage/file failures. Output is replaced only after successful emission through a temporary-file rename. Failure does not delete an older artifact at that path; sidecars are not one atomic multi-file transaction.
+## Managed semantics and library origin
 
-## Linking and limits
+Both emitters consume the same analyzed method bodies. Integer widths, signed/unsigned operations, BigInt Int64, checked overflow, binary32/64, struct copies, managed storage addresses, nullable boxing and tested class/interface/delegate paths have explicit implementations. RVA primitive data and rectangular/lower-bound arrays are supported slices. Limited type handles do not imply arbitrary member reflection.
 
-Application types are assembly-scoped. One version per simple assembly name is accepted; conflicting inputs, mismatched requested identities and reference assemblies used as implementations are rejected. Reference-only abstract interfaces can be deliberately imported as metadata contracts. Complete facade/type-forwarding and multiple load contexts are outside this profile.
+Portable library algorithms are C# compiled into Transpiler.Bcl. Collections, comparers, selected LINQ, task composition/cancellation, source-backed awaitables and async-stream contracts are translated through ordinary IL. Unsupported adjacent members still fail exact binding. The [ledger](compatibility.md) states the boundaries; it supersedes initial-MVP exclusions.
 
-Entry points root executables; eligible public static, non-open-generic methods root libraries. Closed instantiations are discovered from roots. Separate host roots retain array-enumerator and async-ABI operations. Limits are 256 modules, 16,384 specialized methods, 4,096 constructed types and 4,096 characters per constructed identity. These are not total CPU/memory sandbox limits.
+The reviewed original CoreLib catalog contains BigMul(Int32,Int32), integer Min/Max for eight widths/sign combinations, DivRem with out remainder for Int32/Int64, and Sign(Int32/Int64): 21 actual bodies. Input hashes and emitted method origins are recorded. Selected original bodies take precedence over intrinsic shortcuts and retain the upstream notice.
 
-## Original and portable BCL implementations
+## Control flow and exceptions
 
-With --bcl portable, the loader imports the portable managed library and **21 original CoreLib Math methods**: BigMul(Int32,Int32); Min/Max for the eight signed/unsigned 8/16/32/64-bit integer types; DivRem(Int32,Int32,out Int32) and its Int64 counterpart; Sign(Int32) and Sign(Int64). Matching requires static/non-generic status, declaring type, name, return and parameter signature. The selected implementation must supply real managed bodies. Other Math overloads are not implicitly adopted.
+Stack joins, local assignment and protected-region/prefix transfers are checked. Exceptional CFG edges are conservative metadata, not a full executable exception-search IR. Non-InitLocals methods require normal-flow must-assignment before local reads/address acquisition; address-first and exceptional initialization remain conservative.
 
-Portable C# implementations cover selected List<T>, Queue<T>, Stack<T>, Enumerable, Task/Task<T>, completion-source, awaiter and async-builder operations. These are not complete declaring types or full BCL coverage. An unsupported member such as List<T>.Sort remains an error. The manifest lists emitted bodies with supplying assembly/instruction counts, external bindings, assembly hashes and available source reference-pack inputs. Original framework bodies include the upstream notice.
+Block dispatch reduces cases by coalescing straight-line instructions. Managed checks and fault offsets remain. It is not SSA, preemption or an optimizer allowed to reorder side effects. Instruction mode remains the differential baseline.
 
-## Execution contract
+Throw/catch/rethrow/leave/finally preserve tested managed identity and continuation behavior. ExceptionDispatchInfo supports Capture, SourceException and instance/static Throw only as identity-preserving managed operations. .NET stack/Watson state, remote stack injection and full fault-clause behavior are not certified. Exception filters remain rejected until correct cross-frame search-before-unwind exists.
 
-Integer widths, signed/unsigned operations, checked overflow, masked shifts and JavaScript BigInt 64-bit values remain explicit. Signed minimum remainder by minus one follows the documented selected CoreCLR x64 policy. Binary64 covers tested arithmetic, NaN and signed-zero paths, not exhaustive formatting/payload equivalence. Binary32 storage, decimal, SIMD and general native-pointer operations remain unsupported.
+## Cooperative async and source-backed values
 
-Struct value copying, managed-address aliasing, constructed generic static storage, tested interface/MethodImpl/variance dispatch, constrained receivers, delegates and iterator disposal are implemented. Explicit-layout structs, every nullable/span/ref-struct/constraint combination and arbitrary external virtual overrides remain outside the guarantee.
+Task composition, cancellation and ValueTask execute against a single-threaded managed FIFO. Source-backed values carry a source and short version token. The completion core checks sequential registration/completion/token state, clears callback storage before invoking user code, and queues requested asynchronous/late-registration continuations. The 16-bit token wraps; it is not a security generation.
 
-Strings retain reference identity and UTF-16 operations. Vector arrays check null/bounds/type conditions. Multidimensional/lower-bound arrays, field-RVA constant-array helpers, all globalization/default exception text and isolated-surrogate streaming output are not completed surfaces.
+AsTask consumes one source operation and exposes repeatable Task results; Preserve makes a source-backed value Task-backed. Do not repeatedly consume or convert the original source. Generic ToString obtains its result once. Source status distinguishes cancellation from a fault whose exception happens to be OperationCanceledException.
 
-For methods without InitLocals, every normal-flow local read/address acquisition must be proven to follow a store on all paths. Exceptional-region initialization and first initialization through an address remain conservatively rejected. This does not certify arbitrary unverifiable IL.
+AsyncIteratorMethodBuilder and mapped enumeration/disposal contracts support the actual Roslyn state-machine IL. Awaited cleanup, early break, nested/independent enumeration, struct values, configuration and linked cancellation are tested. Continuation flags are forwarded to custom sources. No actual ExecutionContext/SynchronizationContext capture or concurrent completion protocol is implemented. See [the detailed async contract](async-streams.md).
 
-Throw/catch/rethrow/leave/finally use managed exception objects and explicit continuations. Filters and finalizers remain rejected. Exact managed stack traces, stack-overflow recovery and out-of-memory equivalence are not promised.
+## Generated host ABI
 
-## Cooperative async profile
+`invoke(name,args)` selects an exact signature or unambiguous Type::Method export. Primitive/string results are converted; supported host-array inputs are copied into managed wrappers. JavaScript Int64/UInt64 uses BigInt outside Number's exact integer range. General interprocess/byref/callback marshalling is not supplied.
 
-Tasks have pending/success/fault/canceled state. Async builders classify an escaping OperationCanceledException as cancellation; FromException and completion-source SetException still create faults for that exception type. Completion is single-assignment. CompletedTask is nongeneric and cached by this implementation.
+`invokeAsync(name,args,{maxSteps,yieldHost})` and Python `invoke_async(name,args,max_steps=100000)` handle Task and ValueTask results, including source-backed operations. JavaScript yields through the supplied async callback or default host scheduling; Python cooperates with asyncio. These adapters do not automatically turn exported IAsyncEnumerable objects into native host async generators. An exported Task method can consume a managed stream.
 
-Continuations execute on a single-threaded FIFO. Awaiters/builders are translated managed algorithms, not direct substitutions of async method syntax with promises. GetResult may pump the queue and rejects inability to progress or its fixed step budget. Host invokeAsync/invoke_async pumps cooperatively. ConfigureAwait(bool) has no captured .NET context to switch to in this profile.
+Step budgets count pump iterations, not wall-clock work inside a call. Timeout does not cancel a source or interrupt an infinite method. ExecutionContext, threads, Task.Run/Delay and full timer/continuation-option surfaces remain unsupported. ConfigureAwait can alter flags passed to a source but cannot select a nonexistent .NET context.
 
-No Task.Run/Delay, thread pool, full context propagation, cancellation tokens, ValueTask or async streams are implemented. Pump budgets count iterations, not elapsed time, and cannot interrupt an infinite translated call. Timeout does not cancel a pending task.
+Each generated module owns separate runtime/static state. `setOutput`/`set_output` configure output. Root APIs retain/dereference/release own explicit host roots, not authorization or cross-module managed identities.
 
-## Generated-module ABI
+## Heap, reproducibility and exclusions
 
-```javascript
-import { invoke, invokeAsync, retain, dereference, release, runtimeInfo } from './kernel.mjs';
-const answer = await invokeAsync('Kernel::Calculate', [5]);
-console.log(answer.toString());
-const value = invoke('Kernel::Make');
-const handle = retain(value);
-console.log(dereference(handle) === value);
-release(handle);
-console.log(runtimeInfo());
-```
+Ordinary objects use host GC. Weak references, identity hashes and KeepAlive have declared host semantics; JS uses the kept-alive WeakRef mechanism. Forced CLR collection, finalizers, resurrection, pinning and exact heap statistics remain unsupported. The separately linked LogicalHeap manages only its own explicit payloads and roots; it does not enable System.GC.Collect or automatic frame-root scanning.
 
-```python
-import asyncio
-from kernel import invoke_async
-async def example():
-    print(await invoke_async('Kernel::Calculate', [5]))
-asyncio.run(example())
-```
+Target source is deterministic for identical compiler and assembly inputs; installed SDK/reference-pack discovery is not a lockfile. Keep the manifest, source, toolchain and notices with releases. No full BCL/CLI, decimal/native layout/span, general reflection/dynamic code, browser/native-platform, SSA or C++ claim is made.
 
-Compile samples/AsyncLibrary.cs with --library --bcl portable for these examples. invoke selects a full signature or unambiguous Type::Method name and checks arity. Primitive/string conversions are provided; host arrays are copied into managed wrappers. Use BigInt for JavaScript Int64/UInt64 outside the safe Number range. General byref/callback/interprocess marshalling is not a stable ABI.
-
-invokeAsync(name,args,{maxSteps}) and invoke_async(name,args,max_steps=...) default to 100,000 pump steps. String/Boolean task results are unwrapped. Non-task exports return ordinary results. Output callbacks are setOutput/set_output. Each generated module owns separate statics and runtime state; passing runtime objects across independently generated modules is not a shared CLR load context.
-
-## Host lifetime services
-
-WeakReference<T> supports its single-target constructor, SetTarget and TryGetTarget. RuntimeHelpers.GetHashCode is stable for an object within a runtime, with zero for null; it is not numerically portable across processes. JavaScript KeepAlive uses WeakRef kept-alive semantics through the synchronous job boundary and requires that host capability; Python retains the argument through the call.
-
-retain returns a monotonically increasing safe-integer root handle. dereference validates it. release removes the root, returns false for a second release and never forces destruction. runtimeInfo/runtime_info reports host GC, weak-reference availability, explicit-root count, cooperative scheduling, and false for forced collection, managed finalizers and pinning.
-
-GC.Collect, WaitForPendingFinalizers, resurrection tracking, native addresses and CLR generation/statistics APIs are not emulated as no-ops.
-
-## Separate logical heap
-
-Transpiler.Runtime.Managed can be explicitly linked using --reference. Its bounded non-moving C# mark/sweep collector manages only allocations through LogicalHeap, including explicit strong/weak handles, checked generation/ownership, byte/reference quotas and statistics. Source-local HeapReference wrappers are not automatic logical roots. It does not change the default host heap or enable System.GC.Collect. See [logical-heap specification](logical-heap.md).
-
-## Diagnostics and safety
-
-TR3000–3004 identify graph budget/reference misuse/conflicts/identity mismatch/duplicate definitions; TR3100/3101 identify generic budget/open-instantiation failures; TR3200 identifies missing original implementation contracts. TR2006 now includes definite-assignment failure locations. The other import, opcode, linkage and stack diagnostics remain available.
-
-Identical compiler/assembly inputs produce deterministic target source, including reordered explicit dependencies. Installed SDK/reference-pack discovery is not a cross-version lockfile. Preserve source, manifests, toolchain and applicable notices.
-
-This compiler is not a complete verifier or sandbox. Run untrusted compilation and output with OS isolation and external resource limits. Heap handles are ownership mechanisms, not authorization credentials. See [SECURITY.md](../SECURITY.md).
+Diagnostics retain method/IL context where available: TR2002 for missing implementation, TR2006 for local assignment, TR2110 for CFG/region boundaries, TR300x for linkage, TR310x for specialization and TR3200 for missing original-body contracts. This is not a complete verifier or sandbox; use external process isolation and quotas for untrusted inputs.

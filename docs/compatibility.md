@@ -1,41 +1,42 @@
 # Current compatibility ledger
 
-Updated 2026-09-16. JavaScript and Python share analysis and lowering. A supported slice means the named implementation paths and corpus pass, not exhaustive ECMA/.NET certification. Metadata schema 2; profile portable-mvp; optional portable-bcl-v1.
+Updated 2026-09-16. Both targets share the compiler analysis and lowering. Entries describe implemented/tested slices, not exhaustive ECMA/.NET compatibility. Metadata schema 2, profile `portable-mvp`, optional `portable-bcl-v1`.
 
-| Area | Implemented/tested slice | Remaining boundary |
+| Area | Implemented/tested | Still outside the guarantee |
 |---|---|---|
-| C# / PE input | Roslyn C# 14; real DLL import; Debug/Release | No general project/NuGet/source-generator driver |
-| Assembly graph | Explicit multi-assembly linkage; identity mismatch rejection; deterministic input order | General forwarding, multi-version/load-context resolution |
-| Framework binding | Selected reference-pack metadata, distinct implementation bodies | Full hermetic restore/lockfile pipeline |
-| Generics | Bounded closed method/type specialization and distinct statics | Dynamic/open instantiation; exhaustive constraints and sharing |
-| Structs / enums | Copy/address/storage/boxing paths; nested fields; tested formatting | Explicit layout, full nullable/span/ref-struct semantics |
-| Interfaces | Tested implicit/explicit MethodImpl, constrained calls, variance | All default-interface/GVM combinations |
-| Delegates / closures | Function/receiver identity, invocation, combination/removal/equality | Arbitrary unmanaged function pointers and complete delegate variance/interop |
-| Classes / virtual slots | Constructors, fields, statics, internal overrides/newslot | Implicit external virtual-slot bridges; finalizers |
-| Local initialization | Stack checks plus must-assignment proof when InitLocals is false | First initialization through addresses; exceptional-flow proof |
-| Numerics | Fixed-width integers, checked conversion, exact 64-bit values, binary64 | Binary32 storage, decimal, SIMD, all formatting cases |
-| Arrays | Checked SZ vectors, tested covariance and managed enumeration bridge | Rectangular/lower-bound arrays and field-RVA initializers |
-| Strings | Identity/interning and selected UTF-16 operations | Full globalization/formatting and isolated-surrogate console streaming |
-| Exceptions | Catch/throw/rethrow/leave/finally and pending-handler behavior | Two-pass filters; exact traces/default messages; full fault fixtures |
-| Original CoreLib | 21 integer Math methods in UpstreamBclCatalog | Not the complete Math class or arbitrary CoreLib |
-| Portable List<T> | Construction, Add/AddRange, index/Count/Capacity, Insert/RemoveAt/RemoveAll/Clear, ToArray, ForEach, enumeration | Sort, full comparer/equality API, all collection interfaces/overloads |
-| Portable Queue<T>/Stack<T> | Selected storage, mutation, Try operations, enumeration/materialization | Full public interface/overload parity |
-| Portable Enumerable | Selected Range/Repeat, Where/Select, Take/Skip, Count/Any/All/First, Aggregate/Sum, ToArray/ToList | Full LINQ, IQueryable, async LINQ and every overload |
-| Iterators | Real Roslyn iterator bodies, repeated enumeration and early disposal | Every iterator/language/runtime edge case |
-| Async | Task/Task<T>, builders, awaiters, Yield, selected completion-source paths, host adapters | Thread pool, Delay/Run, contexts, tokens, ValueTask, async streams |
-| Host lifetime | WeakReference<T>, identity hash, KeepAlive, explicit roots | Forced collection, finalization/resurrection, pinning, CLR heap APIs |
-| Logical GC library | Translated C# bounded mark/sweep; roots, weak clearing, cycles, stale-address/quota checks | Not the default collector; no implicit local roots, finalizers, compaction or concurrency |
-| Reflection / dynamic | Explicit rejection; no hidden fallback | Metadata reflection, dynamic loading, expression compilation |
-| I/O / native / threads | Selected console and single-thread services only | File/network/GUI/native ABI and memory-model adapters |
-| Host ABI | Primitive/string and selected array input; async results; root handles | General callbacks/byref/object transport across modules/processes |
-| Source generation | Deterministic static method dispatch | SSA optimizations, source maps, structured source recovery |
-| Browser / C++ | Browser ES-module design; C++ design profiles only | Browser qualification and actual C++ emitters |
-| Security | Input import without assembly execution; bounded selected graph structures | Full verifier, hostile-input audit, quotas and sandbox |
+| Frontend / input | C# 14 via Roslyn, actual PE/CIL, Debug and Release | Full project/source-generator/NuGet driver |
+| Assembly graph | Explicit multi-assembly linkage, identity conflict checks, deterministic ordering | General forwarding, redirects, multiple versions/load contexts |
+| Generics | Bounded closed specialization and distinct statics | Dynamic/open construction, full constraints/code sharing |
+| Values / addresses | Struct copies, aliases, boxing, enums and nullable paths | Explicit native layouts, complete span/ref-struct/byref verification |
+| Dispatch | Classes/newslot, tested interfaces/MethodImpl/variance, delegates, selected Object/ValueType bridges | All default-interface/GVM/interop/delegate combinations |
+| Numeric model | Fixed integer widths, checked arithmetic, BigInt Int64, binary64 and binary32 slices | Decimal, general native pointers/SIMD, exhaustive formatting/globalization |
+| Initialization data | Selected RVA-backed primitive array initializers | Arbitrary data blobs/native layouts |
+| Arrays | SZ and rectangular arrays, lower bounds, checked Get/Set/Address, selected creation/clone/clear/enumeration/conversion | Complete Array overload/interface/interop surface |
+| Type identity | typeof/type handles, GetType and selected element/rank/equality operations | Member reflection, general Name/FullName APIs, dynamic loading/emit |
+| Strings | Identity, interning, selected UTF-16 operations, ordinal comparer | Full culture/case-folding/formatting and isolated-surrogate I/O parity |
+| Collections | Selected List/Queue/Stack/Dictionary/HashSet and read-only wrappers; comparer/equality paths; collision/alias tests | Complete declaring-type parity, exact capacity/performance and every overload |
+| List algorithms | Selected range/search/reverse/sort/binary-search/conversion operations | Every pathological comparer and full framework optimization behavior |
+| LINQ | Selected lazy filtering/projection/flattening/set/materialization/aggregation operations | Entire LINQ surface, IQueryable, arbitrary async LINQ |
+| Original BCL | 21 reviewed CoreLib integer Math bodies, proven by origin manifests | Complete Math or arbitrary CoreLib closure |
+| Tasks | Task/Task<T>, composition, completion sources, fault aggregation, selected waits | Threads, Task.Run/Delay, full continuation/context/option surface |
+| Cancellation | Tokens, registrations, linked CTS, reentrant callbacks, selected WaitAsync and token-carrying faults | Timers/WaitHandle, concurrent cancellation, context capture |
+| ValueTask | Result/Task/source-backed values, awaiters, AsTask/Preserve, selected factories/equality | Pooling/allocation parity and arbitrary invalid multiple consumption |
+| Completion sources | IValueTaskSource interfaces and sequential reusable ManualResetValueTaskSourceCore | Multithreaded registration/completion, actual execution/scheduling context |
+| Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations and native host async-generator marshalling |
+| Async disposal | IAsyncDisposable, configured await using, awaited finally, early exit and exception replacement | All resources/host lifetime integrations |
+| Exceptions | Throw/catch/rethrow/leave/finally, selected aggregation and identity-preserving ExceptionDispatchInfo | Filters, exact .NET traces/Watson state, remote stack injection, full fault-clause certification |
+| CFG / verification | Prefix/boundary/region validation, stack joins, normal-flow definite local assignment | Complete verifier, byref escape analysis and exceptional assignment proofs |
+| Source emission | Instruction reference mode and validated basic-block mode | SSA, stack elimination, source maps, idiomatic reconstruction |
+| Host ABI | Primitive/string/selected array inputs, Task/ValueTask results, output/root APIs | General byref/callback/native async iterator/object transport across modules |
+| Host lifetime | Weak references, identity hash, KeepAlive and explicit roots | Forced CLR collection, finalizers/resurrection/pinning |
+| Logical GC | Translated C# bounded mark/sweep with its own explicit-root graph oracle | Ordinary-object integration, implicit locals, relocation/generations/concurrency |
+| Platforms | Node/Python differential hosts | Browser/OS/ARM64 qualification and actual C++ backends |
+| Security | Import without executing assemblies, bounded selected structures, explicit failures | Full hostile-input/resource isolation and sandboxing |
 
-## Evidence dimensions
+## Evidence and terminology
 
-The configured gate has **71 harness cases**: 52 normal/BCL Release/Debug console configurations, eight negative fixtures, ordinary library ABI, malformed PE, and nine extended checks. Logical-heap Release/Debug cases add four translated console executions beyond the 104 ordinary/BCL console executions. Other ABI and graph cases perform additional target runs.
+The configured gate contains **121 cases**: 100 ordinary/BCL console configurations, five negative fixtures, library ABI and malformed PE, plus 14 extended gates. Each ordinary/BCL configuration runs both generated targets: 200 executions. The block comparison checks 12 programs in two source modes and two targets: 48 instruction/block pairs, or 96 target executions. Additional host, graph and logical-heap tests perform further executions.
 
-Every positive console configuration compares stdout and exit status to the same DLL executed by CoreCLR and checks repeated emission. The original-body gate asserts all 21 selected CoreLib algorithms remain emitted IL-derived methods, not hidden Math intrinsics. The assignment gate checks 11 hand-authored control-flow shapes. Logical collection also checks an independent graph oracle, not just agreement among three executions of the same algorithm.
+The four new source/stream fixtures add eight differential cases, and the source-host/provenance test adds one extended case. Source callback flags, stale tokens, single consumption, reset reentrancy, cleanup and cancellation are directly tested. The current report, not the configured count, records observed success; see [validation](validation-summary.md).
 
-The capabilities command enumerates normalized opcode names and registered fixed intrinsic signatures. Pattern-based generic/runtime bindings and valid operand combinations are separate dimensions. No percentage of full CLI or BCL support is claimed. Consult [validation](validation-summary.md) for observed results rather than inferring success from configured counts.
+Capabilities lists opcodes and fixed intrinsic signatures. Generic contract patterns, legal type combinations, metadata, BCL members, host services and performance are separate dimensions. No full-CLI percentage is claimed. [Async contracts](async-streams.md) describe the no-context scheduling and exception-trace boundaries precisely.

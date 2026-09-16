@@ -1,48 +1,38 @@
 # Testing and reproducibility
 
-Updated 2026-09-16. Run from a built checkout:
+Updated 2026-09-16 for source-backed ValueTask and async streams.
 
 ```bash
 dotnet build Transpiler.slnx -c Release
 python3 tests/conformance.py
 ```
 
-The Python harness uses only standard-library packages and launches dotnet, Node and Python child processes with timeouts. Tests write assemblies, PDBs, generated code, analyses, manifests and a machine-readable report under `artifacts/conformance`. Globalization is invariant in the oracle; UTF-8 is selected for test I/O.
+The package-free Python harness launches dotnet, Node and Python processes with per-child timeouts, invariant oracle globalization and UTF-8 test output. Artifacts under artifacts/conformance include real assemblies, generated source, analyses, manifests, diagnostics and report.json. CI clears TRANSPILER_TEST_FILTER; a filtered local run is not a complete gate.
 
-## What the 71-case gate contains
+## Current configured topology
 
-There are 52 ordinary/BCL Release/Debug console configurations, eight negative fixtures, library ABI and malformed PE checks, and nine extended checks. Each ordinary/BCL configuration executes the same DLL under CoreCLR and compiles those bytes to both target languages: 104 generated console executions. The logical-heap Release/Debug extended cases add four generated console executions. Other extended ABI/graph cases execute additional programs.
+There are **121 harness cases**: 100 normal/BCL Debug/Release console configurations, five negative fixtures, library ABI, malformed PE, and 14 extended gates. Counts describe test groupings, not CLI support percentages.
 
-The nine extended gates are definite local assignment, original CoreLib catalog, JavaScript liveness barrier, logical heap Release, logical heap Debug, three-assembly linking, portable BCL provenance, host async/root ABI, and portable rejection boundaries. A harness case can contain many assertions; counts are not opcode/BCL compatibility percentages.
+For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 100 configurations account for 200 generated console executions. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
-## Differential protocol
+Extended gates cover source-host protocol, block mode, ValueTask/cancellation cleanup, WhenAny loser cleanup, definite assignment, protected-region CFG, original-body provenance, JS liveness, logical heap Debug/Release, three-assembly linkage, portable BCL provenance, ordinary host async/roots and explicit unsupported boundaries.
 
-Each positive console fixture is emitted once per source optimization mode. Its CoreCLR stdout and process exit status are the oracle. Both target programs must match. Repeat compilation must produce byte-identical source. Ordinary test output is not normalized to hide discrepancies. The Arguments program returns 7 deliberately, so success is not equated with exit zero in every application.
+## New async protocol tests
 
-Library/host checks cover supported primitive/string/Boolean/Int64 values, cooperative task results and faults, pending-task budget failure, root retention/release and stale-handle rejection. General host-object/byref/callback transport is not certified by these tests.
+ValueTaskSources tests source status/token/result, flags, queued and inline completion, late registration, reset during continuation, AsTask/Preserve, fault/cancellation and struct results. ValueTaskSourceEdges uses reset-on-consumption to catch duplicate result reads, distinguishes a Faulted source throwing OperationCanceledException, and checks invalid registration/completion and 16-bit token rollover.
 
-Negative programs must fail with Transpiler diagnostics without producing a new target file. Portable boundary tests include forced collection, finalizer waits, resurrection-tracking weak references, thread-pool/timer APIs, unsupported collection members and reflection. Importing a reference assembly as an executable implementation is not a valid fallback.
+AsyncStreams and AsyncStreamEdges test actual Roslyn iterator bodies in Debug and Release: suspended yields, early break, awaited finally/disposal, independent enumeration, covariance, generic/struct values, linked cancellation, source exception identity and replacement by disposal failure. ExceptionDispatchInfo tests preserve the object, not .NET trace formatting.
 
-## Evidence specific to the new runtime/BCL work
+The source-host gate completes operations through a JS yieldHost callback and an asyncio task, checks one result consumption per operation, and inspects cleared callback/state fields. Its manifests require actual managed completion-core and Task-bridge bodies. Remote stack injection and ExecutionContext capture remain rejection tests.
 
-`tests/bcl/OriginalMath.cs` reaches all 21 reviewed original CoreLib integer methods. The provenance gate requires those methods to appear as real emitted bodies and rejects Math intrinsic substitution in that fixture. It also checks the upstream notice. Separate portable-library provenance proves emitted algorithms originate in Transpiler.Bcl.
+## Existing guarantees retained
 
-`tests/CompilerChecks` is a package-free C# executable with 11 hand-authored normalized IL control-flow shapes. It checks must-assignment at joins and loops, address acquisition, unreachable code, InitLocals and conservative exceptional-region rejection. This is a targeted proof regression suite, not a complete verifier audit.
+The original-body gate requires 21 real CoreLib method bodies and no Math intrinsic substitution in its fixture. Logical collection has an independent integer-graph oracle, cycle/weak/root/generation/quota checks; it is not a test of host GC timing. CompilerChecks exercises local assignment and protected-region/prefix flows. Hash-storage and collection tests cover collisions, reuse, comparer and enumeration behavior.
 
-`tests/runtime/LogicalHeap.cs` checks logical ownership, generation/stale-reference behavior, explicit roots, weak clearing, cycles, quotas, bounds and accounting. Twenty deterministic randomized graph rounds are checked against an independent integer-index reachability oracle. This matters because three executions of the same incorrect collector could otherwise agree. The primary heap performs 963 allocations per fixture run; smaller auxiliary heaps exercise edge cases.
+Instruction/block comparison requires equal outputs and fewer dispatch cases/source bytes for the selected fixtures, with deterministic block re-emission. It does not measure throughput or prove SSA optimization. JSON output exposes DispatchCaseCount alongside emitted-instruction and method counts.
 
-The JavaScript liveness test instruments the WeakRef barrier operation and removes the host capability to verify explicit failure. It does not assert when a real collector reclaims an object. The logical graph collector has deterministic explicit collection; the ordinary host heap does not acquire that contract.
+## Interpretation and provenance
 
-## Filtered development runs
+Read [validation](validation-summary.md) for observed runs and exact environments. Preserve complete reports, source-archive commit identity, toolchain inputs and notices together. Do not count a configured or filtered suite as passed, or normalize output to hide backend differences. An intentional profile difference needs a documented dedicated test.
 
-`TRANSPILER_TEST_FILTER` selects case names for local development. A filtered green report is not a complete gate. CI explicitly clears the filter. When reporting conformance, preserve the report's environment, complete case list and commit rather than quoting a filtered result as full success.
-
-## Observed environments and artifacts
-
-The full 71-case gate passed locally with SDK 10.0.100, Node 22.16.0 and Python 3.13.5. CI at commit c45129cfe524e7ddca2239d36c7247dd2614ccde passed the same gate with SDK 10.0.401, Node 22.23.2 and Python 3.13.15 on Linux x64. The downloaded source archive's commit comment was checked against that commit, and the report was inspected directly. See [validation](validation-summary.md).
-
-GitHub Actions uploads the compiler, generated programs, manifests, reports, source snapshot and applicable notices. The source ZIP identifies its exact commit. Preserve artifacts needed for release provenance before their hosting retention expires. A later documentation-only commit is not a change to the tested compiler, but the latest commit's own CI remains the branch gate.
-
-## Remaining qualification
-
-Expand hand-authored IL and hostile metadata tests; exception-region/byref verification; property-based numeric/type/dispatch tests; Windows/macOS/ARM64/browser matrices; scheduler/context/reentrancy tests; memory-pressure/liveness tests without timing assumptions; and performance benchmarks. Measure startup, output size, allocation, runtime throughput and compilation resources separately from compatibility.
+Remaining qualification includes full exceptional/byref/type verification, filters, concurrency/context/timer protocols, general host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.

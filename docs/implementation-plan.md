@@ -1,51 +1,45 @@
-# Updated implementation plan
+# Remaining implementation plan
 
-Updated 2026-09-16. The [initial full milestone design](history/0.1/implementation-plan.md) is preserved. This plan records delivered slices and the remaining dependency-ordered work; it does not mark entire CLI feature families complete because a representative library now executes.
+Updated 2026-09-16. This ledger replaces obsolete initial-MVP exclusions. Completed slices remain qualified by [compatibility](compatibility.md), not by broad feature-family names.
 
-## Delivered in the current work batch
+## Delivered foundation
 
-Explicit multi-assembly linking and SDK reference-pack binding; bounded closed generics and separate static storage; struct copies and managed storage references; tested interfaces/MethodImpl/variance and delegates; portable C# collections/LINQ/iterators; cooperative C# tasks/awaiters/builders and host async ABI; host weak references/roots/identity services; provenance and upstream notices; 21 selected original CoreLib integer methods; definite local assignment; and an explicitly linked, transpilable logical mark/sweep heap.
+Real PE/CIL input and Roslyn frontend; explicit assembly linking/reference contracts; bounded generics; structs/nullable and managed references; tested interfaces/delegates/object bridges; collections/comparers/LINQ; original CoreLib slices; binary32/RVA/rectangular arrays and limited type handles; task composition/cancellation; source-backed ValueTask and async iterator/disposal protocols; protected-region CFG/block emission; host lifetime services and a separate translated logical collector.
 
-These establish an end-to-end library path. Full forwarding/constraints/value layouts, broad BCL, full scheduling and ordinary-object GC replacement remain open. The compatibility ledger and test reports qualify each slice.
+The latest async work is library-protocol implementation, not completion of threading/contexts, native host iterator marshalling or all BCL APIs. The existing instruction emitter remains a correctness oracle.
 
-## Priority 1 — Make library adoption systematic
+## 1. Typed identity, resolution and provenance
 
-Create structured, scope-preserving type/member identities rather than extending string substitution indefinitely. Add reviewed facade/type-forwarding resolution, exact method-origin policies, selected implementation-closure discovery, package/reference locks and user-configurable dependency roots. Preserve the existing exact failure behavior when no implementation is available.
+Replace increasingly complex string identities/substitutions with scope-preserving structured type/member/signature nodes. Add reviewed forwarding/facade resolution, input locks, explicit library closure discovery, cancellation and resource limits. Preserve exact diagnostics instead of introducing fallback resolution.
 
-Grow original CoreLib adoption through small reviewed catalogs: integer helpers first, then scalar bit/encoding/string algorithms with explicit runtime boundaries. Each method must have real emitted code, a pinned input hash, both-target tests and rejected adjacent unsupported APIs. Do not execute reference stubs or let intrinsic bindings silently mask missing imported code.
+Acceptance: manifest-replayable multi-package graph with overload/modifier/forwarding conflicts, deterministic output, no reference-stub execution and both-target differential coverage. Add portable-PDB source provenance and source maps separately from semantic identity.
 
-Acceptance: reproducible multi-package graph with deliberate identity/forwarding conflicts; replay from a manifest; reports identify every body, contract and runtime dependency. Add source/PDB provenance and cancellation/resource budgets to the public compiler API.
+## 2. Verification and managed IR
 
-## Priority 2 — Complete collection-enabling semantic gaps
+Extend normal-flow local assignment to exceptional edges and supported address initialization. Validate byref lifetime/escape, subtype/constructor state, generic constraints and unsupported metadata combinations. Introduce explicit storage/value/effect operations before SSA: throwing, initialization, allocation, mutation, callbacks and suspension cannot be reordered blindly.
 
-Implement equality/comparer contracts, Object/ValueType external virtual bridges, nullable boxing and richer generic constraints. Use these foundations for Dictionary<TKey,TValue>, HashSet<T>, complete List collection interfaces and additional LINQ operations. Implement field-RVA initializers and binary32 storage rules as independently gated slices.
+Acceptance: adversarial hand-authored IL and randomized CFG/type tests, instruction/block equivalence and actionable failures. Correct two-pass cross-frame exception filters require a managed-frame search protocol before unwind; adding catch predicates after host unwinding is not sufficient.
 
-Acceptance: custom comparers, collision-heavy dictionaries, struct keys/values, mutation during enumeration, default/null inputs, recursive generics, boxing and delegate callbacks agree with the selected .NET contract. Full interface/GVM/default-method tests must accompany changes to dispatch, not only successful collection samples.
+## 3. Async host capability expansion
 
-Suggested commits: identity and comparer contracts; external virtual bridge; primitive/value equality; dictionary storage; adversarial comparer corpus; set/collection interfaces; RVA/numeric gates; updated surface ledger.
+Keep the single-thread/no-context profile explicit. Add native JS/Python async-iterator adapters with exactly-once disposal, cancellation/early-return handling and scoped enumeration ownership. Define external completion/timer/clock adapters before Task.Delay or timer-based cancellation. Add context flow and concurrency only under separate implemented policies.
 
-## Priority 3 — Scheduling and host capabilities
+Acceptance: cancellation before/during move, host early return/exception, disposal failure, source reuse, simultaneous host operations and callback cleanup. Respect ValueTask single-consumption and short-token rollover. A step budget is not a watchdog. No concurrent ManualResetValueTaskSourceCore contract is claimed until synchronization is implemented and tested.
 
-Keep current cooperative FIFO explicit. Introduce host capabilities for timers, completion notification, cancellation and event-loop integration, then implement selected Task combinators and cancellation-token semantics. Define context/reentrancy policies before promising .NET scheduling equivalence. Add ValueTask/async streams only with their required lifetime/interface contracts.
+## 4. Broader managed libraries and scalars
 
-Acceptance: synchronous and suspended completion, cancellation versus fault, callback reentrancy, timer ordering, disposal during suspension, fairness and multiple concurrent host invocations are tested. Missing host capabilities fail instead of running blocking or synchronous approximations. A pump-step budget is not a substitute for an execution watchdog.
+Expand exact collection/LINQ overloads and interfaces, strings/encoding/globalization, decimal, span/ref-struct and native-layout policy. Grow original upstream-body catalogs only with complete supported closures, input hashes, licenses and both-target error/identity/copy tests. Avoid claims of framework capacity/allocation/performance parity for independent implementations.
 
-## Priority 4 — Managed CFG, effects and verification
+Acceptance: custom/pathological comparers, nullable/value/reference mixtures, versioned enumerators, formatting/culture boundaries and large inputs. Type identity is not member reflection: design retained metadata/invocation and trimming roots before dynamic loading or emit.
 
-Introduce explicit normal/exceptional basic-block edges and storage/address/value operations. Extend definite-assignment proof through exception regions and address initialization. Validate protected-region transfers and byref lifetime/escape rules. Preserve throwing/allocation/type-initialization/callback/suspension effects before stack-to-SSA and optimizer passes.
+## 5. Collector and native targets
 
-Acceptance: hand-authored malformed IL fails before emission; filters are implemented only with a correct two-pass cross-frame search protocol. Optimized source must match the baseline dispatcher and CoreCLR on deterministic and randomized corpora. Benchmark compilation time, output size, startup, allocations and hot-path execution separately from compatibility.
+LogicalHeap is an executable managed algorithm, not the ordinary-object collector. Integration needs descriptors, frame/static/exception/task/delegate/interop roots, safepoints, interior owners and barriers. Add independent injected-safepoint graph tests before switching allocations.
 
-## Priority 5 — Logical heap integration, only as a separate profile
+A restricted std-only C++ ownership backend and cpp-managed runtime-backed backend remain distinct. Native collectors require execution-engine integration; importing a managed library is not native GC reuse. Relocation, finalization, resurrection, generations and concurrent marking are separate milestones.
 
-The current logical collector is a working algorithm library, not the ordinary application's GC. Before integration, add compiler-created descriptors, explicit root frames, static/exception/task/delegate/interop roots, interior-address owners and safepoint liveness. Keep ownership/generation/quota invariants testable independently.
+## 6. Optimization and deployment
 
-Acceptance: every live managed root survives collection at every injected safepoint; root removal makes unreachable cycles collectible; local/interior references survive reassignment and exceptions; no runtime bookkeeping accidentally roots all allocations. Keep allocation and collector bootstrap storage separate. Finalization/resurrection, relocation, generational barriers and concurrency require additional contracts and tests; they are not inferred from a passing mark/sweep graph test.
+Use validated CFGs to build effect-aware SSA and stack elimination while retaining the reference emitter. Measure dispatch, compile time, allocation, source size, startup and throughput independently. Do not infer speedup from reduced case counts alone.
 
-## Longer-range targets
-
-Metadata reflection and trimming roots precede an opt-in dynamic-code profile. Browser/Windows/macOS/ARM64 matrices precede deployment claims. A std-only C++ ownership subset and cpp-managed collector-backed output remain separate planned targets. Research CoreCLR GC, SGen, Boehm and MMTk as execution-engine integration alternatives without treating any as an already integrated dependency.
-
-## Completion rule
-
-A feature slice needs specification references, importer/type representation, verification, linkage/reachability, runtime/library behavior on each claimed target, positive/error/identity/copy tests, capability diagnostics and documentation/provenance. Existing partial support must remain visible. Add a complete vertical slice before increasing the advertised surface.
+Qualify Windows/macOS/ARM64/browser hosts and explicit capability adapters. Add hostile-metadata fuzzing, process isolation, build/source/license manifests and versioned ABI migration tests. Completion requires tests for both claimed targets, adjacent rejection cases and current documentation, not only a successful sample.
