@@ -11,15 +11,15 @@ The package-free Python harness launches dotnet, Node and Python processes with 
 
 ## Current configured topology
 
-There are currently **253 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
+There are currently **261 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
 
-For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 108 ordinary configurations account for 216 generated console executions; the SSA matrix exercises those fixtures separately. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
+For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 110 ordinary configurations account for 220 generated console executions; the SSA matrix exercises those fixtures separately. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
 Extended gates cover source-host protocol, block mode, ValueTask/cancellation cleanup, WhenAny loser cleanup, definite assignment, protected-region CFG, original-body provenance, JS liveness, logical heap Debug/Release, three-assembly linkage, portable BCL provenance, ordinary host async/roots and explicit unsupported boundaries.
 
 ## New async protocol tests
 
-ValueTaskSources tests source status/token/result, flags, queued and inline completion, late registration, reset during continuation, AsTask/Preserve, fault/cancellation and struct results. ValueTaskSourceEdges uses reset-on-consumption to catch duplicate result reads, distinguishes a Faulted source throwing OperationCanceledException, and checks invalid registration/completion and 16-bit token rollover.
+ValueTaskSources tests source status/token/result, flags, queued and inline completion, late registration, reset reentrancy, AsTask/Preserve, fault/cancellation and struct results. ValueTaskSourceEdges uses reset-on-consumption to catch duplicate result reads, distinguishes a Faulted source throwing OperationCanceledException, and checks invalid registration/completion and 16-bit token rollover.
 
 AsyncStreams and AsyncStreamEdges test actual Roslyn iterator bodies in Debug and Release: suspended yields, early break, awaited finally/disposal, independent enumeration, covariance, generic/struct values, linked cancellation, source exception identity and replacement by disposal failure. ExceptionDispatchInfo tests preserve the object, not .NET trace formatting.
 
@@ -35,7 +35,7 @@ Instruction/block comparison requires equal outputs and fewer dispatch cases/sou
 
 Read [validation](validation-summary.md) for observed runs and exact environments. Preserve complete reports, source-archive commit identity, toolchain inputs and notices together. Do not count a configured or filtered suite as passed, or normalize output to hide backend differences. An intentional profile difference needs a documented dedicated test.
 
-Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context and broader timer protocols beyond host-clock-v1, generalized host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
+Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context and calendar/thread integration beyond host-clock-v2, generalized host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
 
 ## Native host-stream gate
 
@@ -55,6 +55,10 @@ IdentityChecks runs 25 structural/forwarding assertions. The end-to-end facade t
 
 ## Host-clock regression gates
 
-`node tests/timers/clock_unit.mjs` and `python tests/timers/clock_unit.py` execute 13 direct service checks each without requiring the compiler. `TRANSPILER_TEST_FILTER=host/timers/ python tests/conformance.py` executes the compiled lifecycle groups under instruction and SSA dispatch: 12 scenarios per target, 48 in total, with deterministic repeated emission and real CoreCLR async oracles. TimerValidation participates in both Debug/Release differential matrices. The full suite also rejects adjacent TimeSpan/public-timer/timed-wait APIs.
+`node tests/timers/clock_unit.mjs` and `python tests/timers/clock_unit.py` execute 13 direct service checks each without requiring the compiler. `TRANSPILER_TEST_FILTER=host/timers/ python tests/conformance.py` executes the compiled lifecycle groups under instruction and SSA dispatch: 12 scenarios per target, 48 in total, with deterministic repeated emission and real CoreCLR async oracles. TimerValidation participates in both Debug/Release differential matrices. These APIs are now positive coverage; the full suite rejects duration parsing, provider calendar APIs and timer WaitHandle disposal.
 
 The independent clock-lifecycle CI job supplies early feedback; it does not replace the unfiltered conformance job. Each test subprocess has a timeout. Runtime pump budgets themselves are not wall-clock watchdogs, and a manually controlled clock can leave a legitimate operation pending until the host advances it. See [host clocks](host-clocks.md).
+
+## Duration/provider and periodic timer gates
+
+`TRANSPILER_TEST_FILTER=host/time-services/ python tests/conformance.py` runs four Debug/Release × instruction/SSA groups, each with 22 scenarios on both hosted targets (176 scenario executions), repeated deterministic emission, managed-body provenance and CoreCLR oracles. `TimeValues` contributes four more duration/validation differential cases. The clock-lifecycle CI job retains its earlier timer report as clock-report.json before executing the expanded group. See [time-services.md](time-services.md).

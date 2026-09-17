@@ -1,52 +1,48 @@
-# Validation evidence — host clocks and timed cancellation
+# Validation evidence — duration and provider time services
 
-Recorded 2026-09-17. Earlier observed milestones are preserved unchanged in the [historical validation ledger](history/validation-before-host-clocks-2026-09-17.md). Those older counts and exclusions describe their own revisions, not the current implementation.
+Recorded 2026-09-17. The [host-clock-v1 validation ledger](history/validation-host-clock-v1-2026-09-17.md) and its preceding history preserve earlier exact revisions and counts. They do not describe the current API exclusions.
 
-## Exact implementation and CI provenance
+## Validated implementation
 
-Validated commit: **`135da38e298bddc44e9f588031bbbcbee4875423`**. Git tree: **`0ba40c448747d701dca8c6a774dd9056a0b7ff26`**.
+Commit: **`699cb46e1a2a780b4afaf9373a7039310b4daa45`**. Git tree: **`0ba460870719fa2101a9bae24e51452ad3b48f54`**. The uploaded tree equals the locally tested compiler/test/workflow index exactly.
 
-[Workflow 35222038685](https://github.com/wieslawsoltes/Transpiler/actions/runs/35222038685) completed both **conformance** and **clock-lifecycle** jobs successfully. Build, the unfiltered differential suite, redistribution notices and artifact packaging all passed.
+[GitHub workflow 35251304501](https://github.com/wieslawsoltes/Transpiler/actions/runs/35251304501) completed successfully. Both the unfiltered **conformance** job and the expanded **clock-lifecycle** job passed. The latter includes old timer ownership scenarios and the new duration/provider/periodic-timer configurations, not merely standalone clock mocks.
 
-Downloaded full artifact **10497484225**, `transpiler-build-and-conformance`, has SHA-256 **`d7df120270d5ab09a3871c209ebe6414f87fad09d5aa93b87ea27f42f94c6a44`**. Its nested source ZIP comment identifies the exact commit above. All **190 compiler, test and workflow files** were compared byte-for-byte with the implementation retained for the documentation update: **zero mismatches**.
+The full artifact **10510136043**, `transpiler-build-and-conformance`, has SHA-256 `4327672724da53b574555abd31e56deefb0ea9a70dd2ca92dbdcb549cf95da70`. The downloaded hash was checked. Its nested source ZIP comment identifies the commit above. All **201 compiler, test and workflow files** were compared byte-for-byte with the retained local source: **zero mismatches**.
 
-The separate clock artifact is **10497727577**, `transpiler-host-clock-regressions`, SHA-256 `a871915ea9edd9cdaa1484a199d749131d604be968e558c2a60dd9c6e6e680c3`. Its targeted job does not replace the unfiltered result.
+The separate clock artifact **10509786299**, `transpiler-host-clock-regressions`, has verified SHA-256 `ef9e48b37641282fe0f68f79a4d56831ddd9825fdb7bf932b528b802c24ae2f4`. Its report is filtered; it is additional evidence, not a replacement for the complete gate.
 
-## Observed full report
+## Two observed complete runs
 
-```json
-{
-  "registeredCases": 253,
-  "selectedCases": 253,
-  "passed": 253,
-  "failed": 0,
-  "complete": true,
-  "filter": "",
-  "workers": 2,
-  "dotnet": "10.0.401",
-  "node": "v22.23.2",
-  "python": "3.13.15"
-}
-```
+| Environment | Registered / selected | Passed | Failed | Complete / filter |
+|---|---|---|---|---|
+| Local Linux, SDK 10.0.100, Node 22.16.0, Python 3.13.5 | 261 / 261 | 261 | 0 | true / empty |
+| GitHub Linux x64, SDK 10.0.401, Node 22.23.2, Python 3.13.15 | 261 / 261 | 261 | 0 | true / empty |
 
-The report identifies Linux x64, kernel 6.17.0-1022-azure and glibc 2.39. Counts represent registered test groups, not full-CLI/BCL compatibility percentages.
+Both runs used two test workers. The local Release build reported zero warnings and errors. CI also passed its build and packaging steps. Counts represent registered test groups, not full CLI/BCL compatibility percentages.
 
-## Clock-specific evidence
+Local report SHA-256: `c83a6c2208196645f939cc1d42a3ec3b9a2e1c141251bdb5a5aaf93885659346`.
 
-The direct clock groups passed **13 checks per host, 26 total**. Compiled instruction and SSA groups each passed **12 lifecycle scenarios per target, 48 total**. Repeated source emission was byte-identical. Both groups also executed the CoreCLR async oracle and observed `42`, `9`, `11`, `22`, `1` in that order.
+CI report SHA-256: `0535bbd7e6420d3f277fc924ef266c8b775557e0677b220feb75a40864309898`.
 
-TimerValidation passed ordinary and SSA Debug/Release differential configurations. The portable-boundary group passed **18 rejection checks across nine categories**, including adjacent TimeSpan delay, public Timer and timed WaitAsync APIs which remain unsupported.
+## New and retained coverage
 
-The timer scenarios cover successful reset before readiness; failed reset after queuing; disarm preserving queued cancellation; stale and duplicate native notifications; cancellation before/after readiness; cancellation-token identity; registration detachment; two simultaneous host waiters; host-wait cancellation without implicit Task cancellation; bulk timer cleanup; native delays; and close during a delayed move with awaited iterator-finally cleanup. Ownership counters return to zero after terminal cleanup.
+The duration/provider batch adds four Debug/Release × instruction/SSA configurations. Each executes 22 lifecycle groups on JavaScript and Python: **176 translated scenario executions per full run**. Each configuration also checks repeated byte-identical emission, actual managed method-body provenance and a CoreCLR oracle built from the same C# library.
 
-## Independent execution-only replay
+TimeValues contributes four more differential configurations, exercising large signed ticks, component/hash/factory results, checked overflow, fractional timeout conversion, validation order, completed/infinite waits, timer disposal and PeriodicTimer boundaries. The earlier **26 direct clock checks** and **48 compiled timer lifecycle scenarios** remain passing in the complete suite, as do native C++, SSA, forwarding, verification, exception and stream tests.
 
-The downloaded generated JavaScript/Python timer modules and drivers were replayed unchanged with **Node 22.16.0** and **Python 3.13.5**. All **48 lifecycle scenario executions passed**. This environment had no .NET SDK; generated programs ran independently of the compiler. This is additional runtime evidence, not an independent compiler build or a second full-suite claim.
+The new scenarios cover input success/fault/timeout/cancellation winners; loser observer and registration detachment; deadlines through 4,294,967,294 ms; serialized periodic callbacks; reentrant Change; DisposeAsync during a callback; callback-only constructor state; zero-period single shot; tick coalescing; rejection of overlapping/unconsumed waits; cancellation of one tick without stopping the timer; disposal voiding a pending tick; synchronous/throwing/reentrant custom providers; custom CTS duration forwarding and reset rejection; monotonic timestamps; and native event-loop execution.
 
-## Scope and revision relationship
+The nine-category boundary group still executes 18 target checks. Duration parsing, provider calendar APIs and Timer.Dispose(WaitHandle) are adjacent rejections; the newly supported APIs were promoted to positive tests rather than left in obsolete negative fixtures.
 
-This completes the current host-clock-v1 Int32 Task.Delay / CTS constructor / CancelAfter continuation, including timer-aware TryReset, ownership, event-loop wakeups, tests and documentation. It does not establish TimeSpan/TimeProvider overloads, public/periodic timers, context/thread services, external I/O completion, real-time deadlines or synchronous native-loop pumping. See [the implemented clock contract](host-clocks.md).
+## Standalone example
 
-Pre-existing bounded SSA, scalar native-std output and other compiler tests remain in the complete gate. Passing them does not complete general effect-aware optimization, a managed-object native runtime or the entire [remaining plan](implementation-plan.md).
+`samples/TimeServices.cs` was separately compiled to standalone JavaScript and Python and executed through their asynchronous host entry points. Both produced 42, true, 3 and an active-timer count of zero (Python prints True). No .NET process was required to execute the generated modules. The source and commands are in [time-services.md](time-services.md).
 
-Subsequent documentation/sample-only commits do not change the 190 validated compiler/test/workflow files. The CI evidence above belongs to its exact implementation commit; preserve that relationship rather than claiming a documentation successor independently reran the suite.
+## Boundaries and documentation successor
+
+This implements the duration/provider/timed-wait/public Timer/PeriodicTimer continuation under **host-clock-v2**, including tests, examples and contract documentation. It does not provide full TimeSpan parsing/formatting/compound factories, calendar/time-zone TimeProvider APIs, Timer.ActiveCount/WaitHandle, native parallel callbacks, execution-context capture or finalizer-based timer cleanup. Explicit disposal and asynchronous hosted entry points remain required where stated.
+
+The compiler-wide [remaining plan](implementation-plan.md) still includes lossless signatures, deeper verification, broader BCL/reflection, generalized stream export discovery, context/thread and I/O services, ordinary-object collector integration, broader optimization and managed-object native backends. The successful timing milestone does not certify those separate capabilities.
+
+The final documentation/sample successor preserves all 201 validated compiler/test/workflow files unchanged. CI evidence belongs to the implementation commit above; the documentation successor does not claim an independent compiler-suite rerun.

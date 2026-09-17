@@ -65,11 +65,11 @@ The sample combines `await foreach`, `yield return`, `Task.Yield`, cancellation 
 
 New support includes source-backed ValueTask, IValueTaskSource interfaces, a reusable versioned completion core, AsTask/Preserve bridges, async iterator/disposal contracts and identity-preserving ExceptionDispatchInfo paths. Tests cover token validation, single consumption, callback-state release, linked cancellation, struct copies and cleanup-exception replacement. [Read the contract](docs/async-streams.md).
 
-Scheduling remains cooperative and single-threaded. Forwarding continuation flags does not implement ExecutionContext or SynchronizationContext. Int32 Task.Delay and timed cancellation are now supported through the separate [host-clock contract](docs/host-clocks.md). Task.Run, context capture, concurrent source operations and exact .NET exception traces remain unsupported.
+Scheduling remains cooperative and single-threaded. Forwarding continuation flags does not implement ExecutionContext or SynchronizationContext. Int32/TimeSpan Task.Delay and timed cancellation are now supported through the separate [host-clock contract](docs/host-clocks.md). Task.Run, context capture, concurrent source operations and exact .NET exception traces remain unsupported.
 
 ## Delayed tasks and timed cancellation
 
-Compile [samples/HostTimers.cs](samples/HostTimers.cs) with `--library --bcl portable`. The exact Int32 overloads of Task.Delay, CancellationTokenSource construction and CancelAfter are backed by monotonic host-clock adapters. Timer callbacks only publish readiness; translated C# scheduler code executes managed callbacks. Task and stream host adapters suspend when idle, preserve cancellation-token identity and release timers and subscriptions on completion/cancellation.
+Compile [samples/HostTimers.cs](samples/HostTimers.cs) with `--library --bcl portable`. The Int32/TimeSpan overloads of Task.Delay, CancellationTokenSource construction and CancelAfter are backed by monotonic host-clock adapters. Timer callbacks only publish readiness; translated C# scheduler code executes managed callbacks. Task and stream host adapters suspend when idle, preserve cancellation-token identity and release timers and subscriptions on completion/cancellation.
 
 ```javascript
 import {invokeAsync, runtimeInfo} from './host-timers.mjs';
@@ -78,7 +78,7 @@ console.log(await invokeAsync('HostTimers::CancellationIdentity', [25])); // tru
 console.log(runtimeInfo().activeTimers); // 0
 ```
 
-Use `invoke_async` inside a running asyncio loop on Python. Blocking Wait/Result and the synchronous generated main entry do not drive native timers. TimeSpan/TimeProvider overloads, public/periodic timers, timed WaitAsync and threads remain separate capabilities. Injectable clocks, reset/disarm ordering, cancellation ownership and diagnostics are specified in [host-clocks.md](docs/host-clocks.md).
+Use `invoke_async` inside a running asyncio loop on Python. Blocking Wait/Result and the synchronous generated main entry do not drive native timers. TimeSpan/TimeProvider timing overloads, public Timer/PeriodicTimer and timed WaitAsync are implemented in the [time-services contract](docs/time-services.md). Threads, contexts, calendar APIs and OS wait handles remain separate capabilities. Injectable clocks, reset/disarm ordering, cancellation ownership and diagnostics are specified in [host-clocks.md](docs/host-clocks.md).
 
 ## Library and runtime origins
 
@@ -143,7 +143,7 @@ python3 tests/conformance.py
 dotnet "$CLI" capabilities --out artifacts/capabilities.json
 ```
 
-The current configured corpus contains **253 harness cases**, including ordinary/BCL and SSA Debug/Release configurations, native scalar checks, host ABI, forwarding, verification, filter and clock tests. Clock coverage includes 26 direct host-service checks and 48 compiled lifecycle scenario groups across both hosted targets and instruction/SSA emission. Counts are test groupings, not CLI coverage percentages. Read the complete/filtered status and observed results in the report rather than treating registration as proof of success. See [validation](docs/validation-summary.md).
+The current configured corpus contains **261 harness cases**, including ordinary/BCL and SSA Debug/Release configurations, native scalar checks, host ABI, forwarding, verification, filter and clock tests. Clock coverage includes 26 direct host-service checks and 48 compiled lifecycle scenario groups across both hosted targets and instruction/SSA emission. The duration/provider extension adds 176 lifecycle scenario executions and CoreCLR oracles. Counts are test groupings, not CLI coverage percentages. Read the complete/filtered status and observed results in the report rather than treating registration as proof of success. See [validation](docs/validation-summary.md).
 
 The harness records whether a run is complete or filtered and refuses empty success. `TRANSPILER_TEST_WORKERS=2 python3 tests/conformance.py` uses bounded parallel case execution with deterministic report ordering; CI clears the filter and uses two workers.
 

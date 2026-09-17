@@ -86,7 +86,7 @@ The managed cursor passes an owned CTS token into GetAsyncEnumerator. JS AbortSi
 
 Closing while a move is outstanding requests cancellation, waits for that same operation and consumes it before starting disposal. No replacement MoveNextAsync is issued. An item or managed cancellation/fault obtained while intentionally closing is consumed and discarded. Cleanup faults remain visible. An ordinary early break between items does not needlessly cancel the enumerator token before disposal.
 
-Cancellation is cooperative. A source can ignore its token and require external completion. A budget does not interrupt an infinite managed call or a yield callback that never resolves, and it is not a wall-clock timeout. The separate host-clock-v1 capability now supplies Int32 Task.Delay and timed CTS/CancelAfter, including delays in iterator finally/disposal. This stream ABI does not add a thread pool, execution context or cancellation preemption; the original abort signal is not applied to cleanup waits.
+Cancellation is cooperative. A source can ignore its token and require external completion. A budget does not interrupt an infinite managed call or a yield callback that never resolves, and it is not a wall-clock timeout. The separate host-clock-v2 capability supplies duration/provider delays, timed CTS/CancelAfter and the [time-services APIs](time-services.md), including delays in iterator finally/disposal. This stream ABI does not add a thread pool, execution context or cancellation preemption; the original abort signal is not applied to cleanup waits.
 
 ## Cleanup pending: retain, complete, retry
 

@@ -19,9 +19,10 @@ Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entri
 | List algorithms | Selected range/search/reverse/sort/binary-search/conversion operations | Every pathological comparer and full framework optimization behavior |
 | LINQ | Selected lazy filtering/projection/flattening/set/materialization/aggregation operations | Entire LINQ surface, IQueryable, arbitrary async LINQ |
 | Original BCL | 21 reviewed CoreLib integer Math bodies, proven by origin manifests | Complete Math or arbitrary CoreLib closure |
-| Tasks | Task/Task<T>, composition, completion sources, fault aggregation, selected waits, Task.Delay(Int32[, CancellationToken]) | Threads, Task.Run, TimeSpan/TimeProvider delay and timed-wait overloads, full continuation/context/options |
-| Cancellation | Tokens, registrations, linked CTS, reentrant callbacks, selected WaitAsync, token-carrying faults, CTS(Int32), CancelAfter(Int32), queued-timer-aware TryReset | Public/periodic timers, TimeSpan/TimeProvider overloads, WaitHandle, concurrent cancellation and context capture |
-| Host clocks | Exact host-clock-v1 bridge, monotonic native/injected clocks, readiness-only notifications, idle wakeups and ownership diagnostics | Real-time deadlines, synchronous blocking event-loop pumping, arbitrary cross-thread/loop delivery |
+| Tasks | Task/Task<T>, composition, completion sources, fault aggregation, selected waits, Int32/TimeSpan/TimeProvider delays and timed WaitAsync | Threads, Task.Run, full continuation/context/options |
+| Cancellation | Tokens, registrations, linked CTS, reentrant callbacks, selected WaitAsync, token-carrying faults, CTS(Int32/TimeSpan/TimeProvider), CancelAfter(Int32/TimeSpan), queued-timer-aware TryReset | WaitHandle, concurrent cancellation and context capture |
+| Host clocks | Exact host-clock-v2 bridge, monotonic native/injected clocks, readiness-only notifications, idle wakeups and ownership diagnostics | Real-time deadlines, synchronous blocking event-loop pumping, arbitrary cross-thread/loop delivery |
+| Time services | Tick-exact TimeSpan subset; TimeProvider timers/timestamps; serialized Timer; coalescing single-consumer PeriodicTimer | Full duration parsing/formatting/compound factories, calendars/time zones, Timer.ActiveCount/WaitHandle, native concurrency and finalizers |
 | ValueTask | Result/Task/source-backed values, awaiters, AsTask/Preserve, selected factories/equality | Pooling/allocation parity and arbitrary invalid multiple consumption |
 | Completion sources | IValueTaskSource interfaces and sequential reusable ManualResetValueTaskSourceCore | Multithreaded registration/completion, actual execution/scheduling context |
 | Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations; arbitrary concrete/Task-wrapped stream exports |
@@ -38,7 +39,7 @@ Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entri
 
 ## Evidence and terminology
 
-The configured gate currently contains **253 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
+The configured gate currently contains **261 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
 
 The four new source/stream fixtures add eight differential cases, and the source-host/provenance test adds one extended case. Source callback flags, stale tokens, single consumption, reset reentrancy, cleanup and cancellation are directly tested. The current report, not the configured count, records observed success; see [validation](validation-summary.md).
 
@@ -50,4 +51,6 @@ The filter/identity/verification continuation adds six ordinary configurations a
 
 ## Host-clock continuation
 
-The eight additional harness cases cover four Debug/Release × instruction/SSA TimerValidation configurations, two direct clock-unit groups and two compiled lifecycle groups. The direct groups execute 13 checks per host; compiled groups execute 12 scenarios per host and dispatch mode, for 48 scenario executions, plus deterministic emission and CoreCLR async oracles. Adjacent TimeSpan delay, public Timer and timed WaitAsync remain rejection tests. Read [host-clocks.md](host-clocks.md) for ownership and synchronous-entry limitations.
+The eight additional harness cases cover four Debug/Release × instruction/SSA TimerValidation configurations, two direct clock-unit groups and two compiled lifecycle groups. The direct groups execute 13 checks per host; compiled groups execute 12 scenarios per host and dispatch mode, for 48 scenario executions, plus deterministic emission and CoreCLR async oracles. TimeSpan delay, public Timer and timed WaitAsync are now positive tests; duration parsing, provider calendar APIs and WaitHandle disposal are adjacent rejection tests. Read [host-clocks.md](host-clocks.md) for ownership and synchronous-entry limitations.
+
+The duration/provider continuation adds four TimeValues differential cases and four Debug/Release × instruction/SSA host configurations. Each host configuration executes 22 scenarios per target (176 total), managed-body provenance, deterministic emission and a CoreCLR oracle. See [time services](time-services.md).

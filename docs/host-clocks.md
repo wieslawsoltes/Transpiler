@@ -1,6 +1,6 @@
 # Host clocks, delayed tasks and timed cancellation
 
-Contract: `host-clock-v1`. Updated 2026-09-17. This is a single-threaded capability for the JavaScript and Python hosted profiles, not a thread pool, a general `System.Threading.Timer` implementation, or a claim of every Task/CTS overload.
+Contract: `host-clock-v2` (the original Int32 milestone was v1). Updated 2026-09-17. This is a single-threaded capability for the JavaScript and Python hosted profiles, not a thread pool or a claim of every Task/CTS API. [Time services](time-services.md) specifies the implemented duration/provider overloads and serialized public timers.
 
 ## Implemented surface
 
@@ -8,7 +8,7 @@ With `--bcl portable`, the compiler links the managed implementations of `Task.D
 
 `Task.Delay(0)` completes immediately unless the supplied token is canceled. A pre-canceled token produces a canceled task with that token. `CancellationTokenSource(0)` is immediately canceled, whereas `CancelAfter(0)` schedules a host notification. Infinite delays allocate no timer; a cancellable infinite delay still owns a registration. Blocking `Wait`, `Result` and the synchronous generated `main` entry do not run an external event loop. Positive delays must be driven through `invokeAsync`, `invoke_async`, or the native stream adapter.
 
-TimeSpan/TimeProvider overloads, periodic/public timers, timed WaitAsync, `Task.Run`, ExecutionContext, SynchronizationContext and cross-thread callbacks remain outside this contract. A missing member is a compiler diagnostic, not a silent fallback.
+TimeSpan/TimeProvider timing overloads, public Timer/PeriodicTimer and timed WaitAsync extend this contract as detailed in [time services](time-services.md). `Task.Run`, ExecutionContext, SynchronizationContext, calendar APIs and cross-thread callbacks remain outside it. A missing member is a compiler diagnostic, not a silent fallback.
 
 ## Running a library
 
@@ -80,7 +80,7 @@ Advancing this clock publishes readiness. The host async operation then resumes 
 
 ## Execution, ordering and wakeup protocol
 
-Managed Task/CTS algorithms remain C# IL translated into the target language. Only six exact internal signatures on `[Transpiler.Bcl]Transpiler.Bcl.Tasks.HostClock` cross the host boundary: Create, Change, HasFired, Destroy, TakeReady and Signal. The intrinsic matcher checks assembly, complete type, static/instance flag, generic arity, argument types and result type.
+Managed Task/CTS algorithms remain C# IL translated into the target language. Only seven exact internal signatures on `[Transpiler.Bcl]Transpiler.Bcl.Tasks.HostClock` cross the host boundary: Create, Change, HasFired, Destroy, TakeReady, Signal and Now. Create/Change use Int64 duration arguments in v2, bounded to 4,294,967,294 ms. The intrinsic matcher checks assembly, complete type, static/instance flag, generic arity, argument types and result type.
 
 Each timer owns a non-reused Int32 identifier, a callback reference, a deadline, a native-handle generation and separate ready/ever-queued state. The callback protocol is:
 
@@ -96,13 +96,13 @@ When a default async adapter has no immediate managed work and a native timer is
 
 Disarming a timer cancels future native delivery but does not retract a callback already queued for managed execution. `TryReset` therefore disarms first and checks persistent ever-queued history. A queued callback makes reset fail, without deleting registrations or erasing the pending cancellation. A successful reset destroys its timer and unregisters previous callbacks. A canceled source never becomes uncanceled.
 
-Delay completion and cancellation both detach the token registration and destroy the owned timer before completing the promise. Manual cancellation, source disposal, reset and stale callbacks have distinct state transitions. A canceled task intentionally retains its cancellation identity; detaching a subscription is not a promise that every object reachable from a task is immediately collectible.
+Delay completion and cancellation publish completion before idempotent cleanup, then detach the token registration and destroy the owned timer. Publishing first prevents reentrant provider-disposal callbacks from winning twice. Manual cancellation, source disposal, reset and stale callbacks have distinct state transitions. A canceled task intentionally retains its cancellation identity; detaching a subscription is not a promise that every object reachable from a task is immediately collectible.
 
 Aborting a JS `invokeAsync` wait or canceling the Python host task detaches its host waiter. It does not assume ownership of the exported managed Task and does not implicitly cancel that Task. The application must expose or retain an explicit managed cancellation path. Stream adapters differ: they own their cursor and linked cancellation source, so return/aclose drains an outstanding move, consumes it once and awaits asynchronous disposal. A cleanup delay is not aborted by the signal that ended ordinary enumeration.
 
 ## Diagnostics and tests
 
-`runtimeInfo()` / `runtime_info()` includes `clock: 'host-clock-v1'`, `activeTimers`, `readyTimers`, `hostWaiters` and `idlePolicy`. `activeTimers` includes a disarmed but still owned CTS timer; it reaches zero on reset/disposal, cancellation or delay completion. Ready counts include early notification hints. These are ownership diagnostics, not general heap/GC measurements.
+`runtimeInfo()` / `runtime_info()` includes `clock: 'host-clock-v2'`, `activeTimers`, `readyTimers`, `hostWaiters` and `idlePolicy`. `activeTimers` includes a disarmed but still owned CTS timer; it reaches zero on reset/disposal, cancellation or delay completion. Ready counts include early notification hints. These are ownership diagnostics, not general heap/GC measurements.
 
 The direct service suites contain 13 checks per host. Compiled lifecycle tests run 12 scenario groups per host under instruction and SSA emission, plus deterministic repeated emission and a real CoreCLR async oracle. TimerValidation is also included in Debug/Release ordinary and SSA differential runs. Tests exercise queued-reset history, early/stale/duplicate notification, synchronous adapter delivery, failed arm cleanup, broadcast wakeups, abort retirement, bulk cancellation, registration detachment and delayed iterator-finally cleanup.
 
