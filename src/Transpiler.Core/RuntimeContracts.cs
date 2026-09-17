@@ -7,6 +7,8 @@ public static class RuntimeContracts
     { var (definition, args) = GenericSpecializer.Split(type); return definition == "System.WeakReference`1" && args.Length == 1; }
     public static string? Find(MethodReference method)
     {
+        var clock = HostClockContracts.Find(method);
+        if (clock is not null) return clock;
         if (!AssemblyLinker.IsFramework(method.Assembly)) return null;
         var numeric = NumericContracts.Find(method);
         if (numeric is not null) return numeric;

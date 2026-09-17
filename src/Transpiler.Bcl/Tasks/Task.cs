@@ -3,14 +3,26 @@ using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 namespace Transpiler.Bcl.Tasks;
 
-/// <summary>Single-threaded FIFO continuation service. This is not a thread pool or a wall-clock timer.</summary>
+/// <summary>Single-threaded FIFO continuations with host-clock readiness; not a thread pool.</summary>
 public static class Scheduler
 {
     private static readonly Queue<Action> Work = new Queue<Action>();
     public static void Post(Action continuation)
-    { if (continuation == null) throw new ArgumentNullException(nameof(continuation)); Work.Enqueue(continuation); }
+    {
+        if (continuation == null) throw new ArgumentNullException(nameof(continuation));
+        Work.Enqueue(continuation);
+        HostClock.Signal();
+    }
     public static bool RunOne()
-    { if (!Work.TryDequeue(out Action next)) return false; next(); return true; }
+    {
+        Action? next = HostClock.TakeReady();
+        if (next == null && !Work.TryDequeue(out next)) return false;
+        // Timer callbacks cannot be starved by a self-posting continuation.
+        // Wake other host operations even when this action consumed the last work item.
+        try { next!(); }
+        finally { HostClock.Signal(); }
+        return true;
+    }
 }
 
 /// <summary>Portable completion/continuation state. Every algorithm is translated from this managed IL.</summary>
@@ -45,6 +57,7 @@ public partial class Task
         if (IsCompleted) return false;
         if (state == 3 && error is OperationCanceledException canceled) Cancellation = canceled.CancellationToken;
         _error = error; _errors = state == 2 ? errors ?? new[] { error! } : null; _state = state;
+        HostClock.Signal();
         NotifyObservers();
         for (int i = 0; i < _continuations.Count; i++) Scheduler.Post(_continuations[i]);
         _continuations.Clear(); return true;

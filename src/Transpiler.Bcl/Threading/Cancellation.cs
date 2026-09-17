@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Transpiler.Bcl.Tasks;
 
 namespace Transpiler.Bcl.Threading;
 
@@ -61,11 +62,29 @@ public class CancellationTokenSource : IDisposable
     private bool _disposed;
     private CallbackList? _callbacks;
     private CancellationTokenRegistration[]? _links;
+    private HostTimer? _timer;
     public CancellationTokenSource() { }
+    public CancellationTokenSource(int millisecondsDelay)
+    {
+        if (millisecondsDelay < -1) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+        if (millisecondsDelay == 0) _state = 2;
+        else if (millisecondsDelay != -1) _timer = new HostTimer(millisecondsDelay, CancelFromTimer);
+    }
     private CancellationTokenSource(bool canceled) { _state = canceled ? 2 : 0; }
     public bool IsCancellationRequested => _state != 0;
     public CancellationToken Token { get { ThrowIfDisposed(); return new CancellationToken(this); } }
     private void ThrowIfDisposed() { if (_disposed) throw new ObjectDisposedException("CancellationTokenSource"); }
+    private void DisposeTimer() { var timer = _timer; _timer = null; timer?.Dispose(); }
+    private void CancelFromTimer() { if (!_disposed) Cancel(); }
+    public void CancelAfter(int millisecondsDelay)
+    {
+        // Argument validation precedes disposal and cancellation checks, as on CoreCLR.
+        if (millisecondsDelay < -1) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+        ThrowIfDisposed();
+        if (_state != 0) return;
+        if (_timer != null) _timer.Change(millisecondsDelay);
+        else if (millisecondsDelay != -1) _timer = new HostTimer(millisecondsDelay, CancelFromTimer);
+    }
     internal sealed class CallbackList
     {
         internal Callback? Head;
@@ -101,6 +120,7 @@ public class CancellationTokenSource : IDisposable
         ThrowIfDisposed();
         if (_state != 0) return;
         _state = 1;
+        DisposeTimer();
         CallbackList? list = _callbacks;
         _callbacks = null; // Local list survives Dispose from inside a callback.
         var errors = new List<Exception>();
@@ -122,6 +142,12 @@ public class CancellationTokenSource : IDisposable
     {
         ThrowIfDisposed();
         if (_state != 0) return false;
+        if (_timer != null)
+        {
+            // Disarming cannot retract an already-queued timer callback.
+            if (!_timer.TryReset()) return false;
+            _timer = null;
+        }
         _callbacks?.Clear(); _callbacks = null; return true;
     }
     public static CancellationTokenSource CreateLinkedTokenSource(CancellationToken token) => CreateLinkedTokenSource(new[] { token });
@@ -142,6 +168,7 @@ public class CancellationTokenSource : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        DisposeTimer();
         _callbacks?.Clear(); _callbacks = null;
         var links = _links; _links = null;
         if (links != null) for (int i = 0; i < links.Length; i++) links[i].Dispose();

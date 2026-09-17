@@ -13,6 +13,7 @@ class ManagedAsyncIterator {
         this.runtime = runtime; this.name = name; this.args = [...args];
         this.maxSteps = options.maxSteps ?? 100000; this.cleanupSteps = options.cleanupSteps ?? this.maxSteps;
         for (const n of [this.maxSteps, this.cleanupSteps]) if (!Number.isSafeInteger(n) || n < 1) throw new TypeError('Stream step budgets must be positive safe integers');
+        this.customYield = options.yieldHost !== undefined;
         this.yieldHost = options.yieldHost ?? (() => new Promise(resolve => setTimeout(resolve, 0)));
         if (typeof this.yieldHost !== 'function') throw new TypeError('yieldHost must be a function');
         this.signal = options.signal ?? null;
@@ -41,7 +42,7 @@ class ManagedAsyncIterator {
     }
     cancel(reason = streamAbortError()) {
         if (this.closed || this.hasReason) return false;
-        this.hasReason = true; this.reason = reason; this.requestCancel(); return true;
+        this.hasReason = true; this.reason = reason; this.requestCancel(); this.runtime.clock.signal(); return true;
     }
     checkAbort() {
         if (this.signal?.aborted && !this.hasReason) this.cancel(this.signal.reason ?? streamAbortError());
@@ -72,14 +73,19 @@ class ManagedAsyncIterator {
     }
     async wait(member, steps, cleanup) {
         for (let step = 0; ; step++) {
+            const version = this.runtime.clock.version;
             if (!cleanup) this.checkAbort();
             if (this.call(member)) return;
             if (step === steps) throw new Error('Stream operation exceeded its pump step budget');
-            this.runtime.call(this.binding.pump, []);
-            let yielded;
-            this.callingYield = true;
-            try { yielded = this.yieldHost(); } finally { this.callingYield = false; }
-            await yielded;
+            const progressed = this.runtime.call(this.binding.pump, []);
+            if (!progressed && !this.customYield && this.runtime.clock.canWait()) {
+                await this.runtime.clock.wait(version, cleanup ? null : this.signal);
+            } else {
+                let yielded;
+                this.callingYield = true;
+                try { yielded = this.yieldHost(); } finally { this.callingYield = false; }
+                await yielded;
+            }
         }
     }
     async drainDispose() {

@@ -20,6 +20,7 @@ class ManagedAsyncIterator:
         if any(type(n) is not int or n < 1 or n > 9007199254740991 for n in (self.max_steps, self.cleanup_steps)):
             raise ValueError('Stream step budgets must be positive safe integers')
         if yield_host is not None and not callable(yield_host): raise TypeError('yield_host must be callable')
+        self.custom_yield = yield_host is not None
         self.yield_host = yield_host or (lambda: _asyncio.sleep(0))
         candidates = [(k, v) for k, v in runtime.meta['exports'].items() if k == name or k.split('(')[0] == name]
         if len(candidates) != 1: raise ValueError('Use an unambiguous exported stream signature: ' + name)
@@ -59,6 +60,7 @@ class ManagedAsyncIterator:
         if self.closed or self.reason is not None: return False
         self.reason = StreamCancelledError('Stream enumeration was canceled')
         self._request_cancel()
+        self.runtime.clock.signal()
         return True
 
     def _check_abort(self):
@@ -82,11 +84,15 @@ class ManagedAsyncIterator:
 
     async def _wait(self, member, steps, cleanup):
         for step in range(steps + 1):
+            version = self.runtime.clock.version
             if not cleanup: self._check_abort()
             if self.call(member): return
             if step == steps: raise TimeoutError('Stream operation exceeded its pump step budget')
-            self.runtime.call(self.binding['pump'], [])
-            await self.yield_host()
+            progressed = self.runtime.call(self.binding['pump'], [])
+            if not progressed and not self.custom_yield and self.runtime.clock.can_wait():
+                await self.runtime.clock.wait(version)
+            else:
+                await self.yield_host()
 
     async def _drain_dispose(self):
         self.stopping = True
