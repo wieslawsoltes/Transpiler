@@ -5,6 +5,10 @@ namespace Transpiler.Core;
 public sealed record MethodAnalysis(MethodDefinitionModel Method, IReadOnlyDictionary<int, string[]> StackBefore)
 {
     public CilControlFlowGraph? ControlFlow { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StackSsaGraph? Ssa { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SsaExclusion { get; init; }
 }
 public sealed record CompilationAnalysis(AssemblyModel Assembly, MethodAnalysis[] Methods, string[] Exports);
 
