@@ -6,7 +6,7 @@
 
 C# source and existing managed DLLs use one assembly-based compiler. Generated programs contain target-language methods and semantic helpers, not a CLR subprocess, Python.NET dependency, runtime download or original IL instruction stream. The compiler itself requires .NET; generated programs do not.
 
-The current `portable-mvp` profile and optional `portable-bcl-v1` library policy are explicit, tested subsets. They are not complete CLI, BCL, threading, reflection or native-platform compatibility. C++ remains planned.
+The current `portable-mvp` profile and optional `portable-bcl-v1` library policy are explicit, tested subsets. They are not complete CLI, BCL, threading, reflection or native-platform compatibility. A separate `native-std` C++ scalar backend is implemented; managed objects, GC and broad native services are not part of that restricted profile.
 
 ## Build and run
 
@@ -65,7 +65,20 @@ The sample combines `await foreach`, `yield return`, `Task.Yield`, cancellation 
 
 New support includes source-backed ValueTask, IValueTaskSource interfaces, a reusable versioned completion core, AsTask/Preserve bridges, async iterator/disposal contracts and identity-preserving ExceptionDispatchInfo paths. Tests cover token validation, single consumption, callback-state release, linked cancellation, struct copies and cleanup-exception replacement. [Read the contract](docs/async-streams.md).
 
-Scheduling remains cooperative and single-threaded. Forwarding continuation flags does not implement ExecutionContext or SynchronizationContext. Timers, Task.Run/Delay, concurrent source operations and exact .NET exception traces remain unsupported.
+Scheduling remains cooperative and single-threaded. Forwarding continuation flags does not implement ExecutionContext or SynchronizationContext. Int32 Task.Delay and timed cancellation are now supported through the separate [host-clock contract](docs/host-clocks.md). Task.Run, context capture, concurrent source operations and exact .NET exception traces remain unsupported.
+
+## Delayed tasks and timed cancellation
+
+Compile [samples/HostTimers.cs](samples/HostTimers.cs) with `--library --bcl portable`. The exact Int32 overloads of Task.Delay, CancellationTokenSource construction and CancelAfter are backed by monotonic host-clock adapters. Timer callbacks only publish readiness; translated C# scheduler code executes managed callbacks. Task and stream host adapters suspend when idle, preserve cancellation-token identity and release timers and subscriptions on completion/cancellation.
+
+```javascript
+import {invokeAsync, runtimeInfo} from './host-timers.mjs';
+console.log(await invokeAsync('HostTimers::Delayed', [25])); // 42
+console.log(await invokeAsync('HostTimers::CancellationIdentity', [25])); // true
+console.log(runtimeInfo().activeTimers); // 0
+```
+
+Use `invoke_async` inside a running asyncio loop on Python. Blocking Wait/Result and the synchronous generated main entry do not drive native timers. TimeSpan/TimeProvider overloads, public/periodic timers, timed WaitAsync and threads remain separate capabilities. Injectable clocks, reset/disarm ordering, cancellation ownership and diagnostics are specified in [host-clocks.md](docs/host-clocks.md).
 
 ## Library and runtime origins
 
@@ -80,9 +93,9 @@ Scheduling remains cooperative and single-threaded. Forwarding continuation flag
 
 The recovered work also includes Dictionary/HashSet and comparer paths; selected Object/ValueType bridges; nullable; binary32 and RVA initializers; rectangular/lower-bound arrays and limited type identity; cancellation tokens and Task composition; protected-region CFG validation and block dispatch. See the [compatibility ledger](docs/compatibility.md), not an old milestone's exclusions, for the current status.
 
-## Two source emitters, one semantic pipeline
+## Source emission modes, one semantic pipeline
 
-`--dispatch instruction` is the reference mode and default. `--dispatch block` coalesces straight-line instructions into validated basic blocks while retaining semantic helpers and fault offsets. This is not SSA optimization or idiomatic source reconstruction. The cross-emitter gate compares 48 target/configuration pairs across 12 fixtures, including async streams and source-backed values.
+`--dispatch instruction` is the reference mode and default. `--dispatch block` coalesces straight-line instructions into validated basic blocks while retaining semantic helpers and fault offsets. The separate `--dispatch ssa` mode performs validated stack SSA and stack elimination where supported, with explicit fallback for excluded methods. Neither block coalescing nor SSA promises idiomatic source reconstruction. The cross-emitter gate compares 48 target/configuration pairs across 12 fixtures, including async streams and source-backed values.
 
 ```csharp
 var analysis = CompilerAnalysis.Analyze(linkedAssembly);
@@ -130,10 +143,10 @@ python3 tests/conformance.py
 dotnet "$CLI" capabilities --out artifacts/capabilities.json
 ```
 
-The full local and implementation-CI gates passed **135 cases, 0 failures**. The corpus contains **135 cases**: 106 ordinary/BCL Debug/Release configurations, four negative fixtures, library/malformed-PE checks and 23 extended gates. The ordinary configurations account for 212 generated console executions; instruction/block, live-frame retirement, host-stream, forwarding and raw-IL gates add further executions. Identity checks include 25 assertions and the new safety gate includes 22. Counts are not CLI coverage percentages. See [validation](docs/validation-summary.md) for observed results and exact commits.
+The current configured corpus contains **253 harness cases**, including ordinary/BCL and SSA Debug/Release configurations, native scalar checks, host ABI, forwarding, verification, filter and clock tests. Clock coverage includes 26 direct host-service checks and 48 compiled lifecycle scenario groups across both hosted targets and instruction/SSA emission. Counts are test groupings, not CLI coverage percentages. Read the complete/filtered status and observed results in the report rather than treating registration as proof of success. See [validation](docs/validation-summary.md).
 
 The harness records whether a run is complete or filtered and refuses empty success. `TRANSPILER_TEST_WORKERS=2 python3 tests/conformance.py` uses bounded parallel case execution with deterministic report ordering; CI clears the filter and uses two workers.
 
-[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
+[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Host clocks](docs/host-clocks.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
 
-The project does not yet provide complete signature/loader or verification fidelity, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC, SSA or C++ output. Managed two-pass filters and explicit scoped forwarding are implemented, with remaining limits documented. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).
+The project does not yet provide complete signature/loader or verification fidelity, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC or a managed-object C++ runtime. Stack SSA and restricted scalar C++ output are implemented; neither implies those broader capabilities. Managed two-pass filters and explicit scoped forwarding are implemented, with remaining limits documented. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).

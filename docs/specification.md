@@ -1,6 +1,6 @@
 # Portable compiler specification
 
-Updated 2026-09-17 after the native host-stream continuation. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
+Updated 2026-09-17 after the host-clock and timed-cancellation continuation. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
 
 ## Inputs, binding and CLI
 
@@ -16,7 +16,7 @@ Commands: compile, emit-pe, inspect, analyze and capabilities.
 | --bcl portable / none | Select portable library substitutions and reviewed upstream bodies; default none |
 | --reference-pack / --corelib | Explicit framework contract directory / original implementation assembly |
 | --library / --debug | Library roots / Debug source optimization |
-| --dispatch instruction / block | Reference instruction mode (default) or validated basic-block coalescing |
+| --dispatch instruction / block / ssa | Reference instruction mode (default), basic-block coalescing, or bounded stack SSA with explicit fallback |
 | --ir / --manifest / --diagnostics | Analysis, input/method provenance and structured diagnostics |
 
 Exit status is 0 success, 1 compilation/capability rejection, 2 usage/file failure. Successful target writes replace via a temporary file. Failure does not delete an older file at that path; callers must check status. Sidecar writes are not one multi-file transaction.
@@ -53,9 +53,9 @@ AsyncIteratorMethodBuilder and mapped enumeration/disposal contracts support the
 
 `invoke(name,args)` selects an exact signature or unambiguous Type::Method export. Primitive/string results are converted; supported host-array inputs are copied into managed wrappers. JavaScript Int64/UInt64 uses BigInt outside Number's exact integer range. General interprocess/byref/callback marshalling is not supplied.
 
-`invokeAsync(name,args,{maxSteps,yieldHost})` and Python `invoke_async(name,args,max_steps=100000)` handle Task and ValueTask results, including source-backed operations. JavaScript yields through the supplied async callback or default host scheduling; Python cooperates with asyncio. The separate `stream` ABI adapts exports declared exactly as IAsyncEnumerable<T> to native async-iterator protocols. It is not automatically selected by invokeAsync, and it does not serialize arbitrary object graphs.
+`invokeAsync(name,args,{maxSteps,yieldHost,signal})` and Python `invoke_async(name,args,max_steps=100000)` handle Task and ValueTask results, including source-backed operations. JavaScript yields through the supplied async callback or default host scheduling; Python cooperates with asyncio. The separate `stream` ABI adapts exports declared exactly as IAsyncEnumerable<T> to native async-iterator protocols. It is not automatically selected by invokeAsync, and it does not serialize arbitrary object graphs.
 
-Step budgets count pump iterations, not wall-clock work inside a call. Timeout does not cancel a source or interrupt an infinite method. ExecutionContext, threads, Task.Run/Delay and full timer/continuation-option surfaces remain unsupported. ConfigureAwait can alter flags passed to a source but cannot select a nonexistent .NET context.
+Step budgets count pump iterations, not wall-clock work inside a call. Timeout does not cancel a source or interrupt an infinite method. The host-clock-v1 capability implements exact Int32 Task.Delay and timed CTS/CancelAfter overloads through asynchronous hosted execution. ExecutionContext, threads, Task.Run and full timer/continuation-option surfaces remain unsupported. Blocking main/Wait/Result do not drive native timers; see [host clocks](host-clocks.md). ConfigureAwait can alter flags passed to a source but cannot select a nonexistent .NET context.
 
 Each generated module owns separate runtime/static state. `setOutput`/`set_output` configure output. Root APIs retain/dereference/release own explicit host roots, not authorization or cross-module managed identities.
 
@@ -63,7 +63,7 @@ Each generated module owns separate runtime/static state. `setOutput`/`set_outpu
 
 Ordinary objects use host GC. Weak references, identity hashes and KeepAlive have declared host semantics; JS uses the kept-alive WeakRef mechanism. Forced CLR collection, finalizers, resurrection, pinning and exact heap statistics remain unsupported. The separately linked LogicalHeap manages only its own explicit payloads and roots; it does not enable System.GC.Collect or automatic frame-root scanning.
 
-Target source is deterministic for identical compiler and assembly inputs; installed SDK/reference-pack discovery is not a lockfile. Keep the manifest, source, toolchain and notices with releases. No full BCL/CLI, decimal/native layout/span, general reflection/dynamic code, browser/native-platform, SSA or C++ claim is made.
+Target source is deterministic for identical compiler and assembly inputs; installed SDK/reference-pack discovery is not a lockfile. Keep the manifest, source, toolchain and notices with releases. No full BCL/CLI, decimal/native layout/span, general reflection/dynamic code or browser/native-platform claim is made. Bounded stack SSA and restricted native-std scalar C++ output have separate implemented profiles; neither is a full managed native runtime.
 
 Diagnostics retain method/IL context where available: TR2002 for missing implementation, TR2006 for local assignment, TR2110 for CFG/region boundaries, TR300x for linkage, TR310x for specialization and TR3200 for missing original-body contracts. This is not a complete verifier or sandbox; use external process isolation and quotas for untrusted inputs.
 

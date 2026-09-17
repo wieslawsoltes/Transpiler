@@ -1,6 +1,6 @@
 # Current compiler architecture
 
-Updated 2026-09-17 after the two-pass filter, structured-forwarding and verification batch. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
+Updated 2026-09-17 after the host-clock and timed-cancellation continuation. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
 
 ## Pipeline and implementation origins
 
@@ -19,7 +19,7 @@ portable BCL and reviewed CoreLib IL ---> explicit library binding
                                             |
                          class/interface/value/host-root linkage metadata
                                             |
-                        instruction or basic-block source emission
+                        instruction / block / bounded-SSA source emission
                                       /             \
                             JavaScript helpers    Python helpers
 ```
@@ -59,7 +59,9 @@ Tasks, composition, completion sources and cancellation are translated managed a
 
 Async iterators are actual Roslyn-generated classes and method bodies. Portable IAsyncEnumerable/IAsyncEnumerator/IAsyncDisposable, AsyncIteratorMethodBuilder, completion-core and configured-enumeration implementations satisfy their dependencies. No compiler syntax shortcut or native generator substitution is used. Awaited finally/disposal and linked cancellation remain ordinary imported IL behavior.
 
-ExceptionDispatchInfo preserves the exception object for generated cleanup paths, not .NET stack traces. Modules containing filters now use live-frame two-pass search before unwind. Filter entry points share arguments/locals while using separate evaluation stacks and temporary operands. Filter helper failures, initializer interception boundaries, replacement exceptions and frame retirement are tested. The persisted-IL fixture also exercises fault clauses. Native exception/stack-trace fidelity is not claimed. See [linking and verification](linking-verification.md). Forwarded source continuation flags do not imply context capture, threading or timer support.
+ExceptionDispatchInfo preserves the exception object for generated cleanup paths, not .NET stack traces. Modules containing filters now use live-frame two-pass search before unwind. Filter entry points share arguments/locals while using separate evaluation stacks and temporary operands. Filter helper failures, initializer interception boundaries, replacement exceptions and frame retirement are tested. The persisted-IL fixture also exercises fault clauses. Native exception/stack-trace fidelity is not claimed. See [linking and verification](linking-verification.md). Forwarded source continuation flags do not imply context capture or threading. Timer support is a separate host-clock-v1 capability, not a consequence of those flags.
+
+The managed Task.Delay/CTS implementation owns subscriptions and HostTimer handles. Six exact internal clock signatures cross the host boundary; native JS/asyncio callbacks only publish readiness. Scheduler.RunOne executes the managed callback. Broadcast wake generations prevent concurrent host waiters from missing completion when another waiter consumes the last continuation. Blocking generated main/Wait/Result do not run the native event loop; see [host clocks](host-clocks.md).
 
 Host-invoked Task/ValueTask operations are explicit roots before pruning. invokeAsync/invoke_async adapts supported results and drives the queue. Native async-iterator adapters are now delivered for declared IAsyncEnumerable<T> exports. A closed managed StreamCursor<T> owns the enumerator, CTS and pending move/disposal; explicit host roots retain its methods. StreamMetadata exposes the versioned method table and fails incomplete linkage with TR2220. The JS/Python protocol layer owns loop integration, cancellation notifications and result unwrapping. Cleanup timeout retains the exact operation for retry, not a hidden second enumeration. See [host streams](host-streams.md). Step budgets are not execution preemption.
 
@@ -67,4 +69,4 @@ Host-invoked Task/ValueTask operations are explicit roots before pruning. invoke
 
 Ordinary generated objects use host GC. Weak references, identity hashes, KeepAlive and explicit root handles have declared host semantics. LogicalHeap owns only its independent payloads and explicit roots. A general logical/native collector profile requires compiler-created descriptors, roots, safepoints, interior-reference ownership and barriers.
 
-Next compiler work is completing signature/loader fidelity, effect-aware managed HIR/CFG/SSA, stronger exception/byref verification and explicit host capabilities. Broad reflection/dynamic code and C++ are separate milestones. See [specification](specification.md), [async contracts](async-streams.md) and [implementation plan](implementation-plan.md).
+Next compiler work includes lossless signature/loader fidelity, broader effect-aware optimization beyond the implemented stack SSA, stronger exception/byref verification and additional host capabilities. Broad reflection/dynamic code and a managed-object C++ runtime remain separate milestones from the implemented restricted scalar native-std backend. See [specification](specification.md), [async contracts](async-streams.md) and [implementation plan](implementation-plan.md).

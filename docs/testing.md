@@ -1,6 +1,6 @@
 # Testing and reproducibility
 
-Updated 2026-09-17 for filters, structural forwarding and managed-address verification.
+Updated 2026-09-17 for host clocks, delayed-task ownership and the expanded SSA/native regression matrix.
 
 ```bash
 dotnet build Transpiler.slnx -c Release
@@ -11,9 +11,9 @@ The package-free Python harness launches dotnet, Node and Python processes with 
 
 ## Current configured topology
 
-There are **135 harness cases**: 106 normal/BCL Debug/Release console configurations, four negative fixtures, library ABI, malformed PE, and 23 extended gates. Counts describe test groupings, not CLI support percentages.
+There are currently **253 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
 
-For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 106 configurations account for 212 generated console executions. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
+For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 108 ordinary configurations account for 216 generated console executions; the SSA matrix exercises those fixtures separately. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
 Extended gates cover source-host protocol, block mode, ValueTask/cancellation cleanup, WhenAny loser cleanup, definite assignment, protected-region CFG, original-body provenance, JS liveness, logical heap Debug/Release, three-assembly linkage, portable BCL provenance, ordinary host async/roots and explicit unsupported boundaries.
 
@@ -35,7 +35,7 @@ Instruction/block comparison requires equal outputs and fewer dispatch cases/sou
 
 Read [validation](validation-summary.md) for observed runs and exact environments. Preserve complete reports, source-archive commit identity, toolchain inputs and notices together. Do not count a configured or filtered suite as passed, or normalize output to hide backend differences. An intentional profile difference needs a documented dedicated test.
 
-Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context/timer protocols, generalized host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
+Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context and broader timer protocols beyond host-clock-v1, generalized host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
 
 ## Native host-stream gate
 
@@ -52,3 +52,9 @@ FilterOrdering and FilterAsync cover search-before-unwind across callers, librar
 IdentityChecks runs 25 structural/forwarding assertions. The end-to-end facade test executes an unchanged App.dll after replacing Contracts.dll with a forwarder to Destination.dll. SafetyChecks runs 22 local-origin, indirect-width, exception-assignment and filter-layout assertions. A separate persisted assembly tests fault on exceptional exit, no fault on normal exit, filter-before-fault ordering and nonzeroed exception locals against CoreCLR.
 
 `TRANSPILER_TEST_WORKERS` accepts one through eight workers; default one, CI two. Every registered case owns its artifact directory and reports retain registration order. No later cases are dropped after a failure. Reports include `registeredCases`, `selectedCases`, `filter`, `workers` and `complete`. An empty selection returns failure instead of a green report. A previous report is removed before starting, so interruption cannot leave an old success masquerading as the new run. These harness checks are separate from compiler/runtime parallelism.
+
+## Host-clock regression gates
+
+`node tests/timers/clock_unit.mjs` and `python tests/timers/clock_unit.py` execute 13 direct service checks each without requiring the compiler. `TRANSPILER_TEST_FILTER=host/timers/ python tests/conformance.py` executes the compiled lifecycle groups under instruction and SSA dispatch: 12 scenarios per target, 48 in total, with deterministic repeated emission and real CoreCLR async oracles. TimerValidation participates in both Debug/Release differential matrices. The full suite also rejects adjacent TimeSpan/public-timer/timed-wait APIs.
+
+The independent clock-lifecycle CI job supplies early feedback; it does not replace the unfiltered conformance job. Each test subprocess has a timeout. Runtime pump budgets themselves are not wall-clock watchdogs, and a manually controlled clock can leave a legitimate operation pending until the host advances it. See [host clocks](host-clocks.md).

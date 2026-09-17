@@ -74,7 +74,7 @@ JavaScript provides next(), return(value), throw(error), Symbol.asyncIterator, a
 | yieldHost | yield_host | Trusted cooperative completion hook returning an awaitable |
 | signal | cancel() / asyncio task cancellation | Host cancellation entry point |
 
-Budgets are positive safe integers, capped at JavaScript's safe-integer range on both targets. The default JS yield uses a host timer turn; Python yields with asyncio.sleep(0). The callback can supply external managed completion, but **must not await operations on its own stream**. Direct detected reentrant close is rejected; arbitrary causal await cycles are not generally detectable.
+Budgets are positive safe integers, capped at JavaScript's safe-integer range on both targets. When no managed work is immediately available but a native timer is armed, the default adapters wait for its notification. Otherwise JS yields through a host timer turn and Python through asyncio.sleep(0). Explicit yield callbacks retain their existing scheduling behavior; see [host clocks](host-clocks.md). The callback can supply external managed completion, but **must not await operations on its own stream**. Direct detected reentrant close is rejected; arbitrary causal await cycles are not generally detectable.
 
 Adapter `closed` is true only after terminal retirement or closure before acquisition. `pending` is null, move or dispose. These observations are not permission to overlap operations or mutate implementation fields. `runtimeInfo()` / `runtime_info()` adds `activeStreams` and `streamPolicy`. Active-stream accounting includes pending-cleanup cursors and excludes never-opened adapters. It is not an allocation/root count and does not root all objects itself.
 
@@ -86,7 +86,7 @@ The managed cursor passes an owned CTS token into GetAsyncEnumerator. JS AbortSi
 
 Closing while a move is outstanding requests cancellation, waits for that same operation and consumes it before starting disposal. No replacement MoveNextAsync is issued. An item or managed cancellation/fault obtained while intentionally closing is consumed and discarded. Cleanup faults remain visible. An ordinary early break between items does not needlessly cancel the enumerator token before disposal.
 
-Cancellation is cooperative. A source can ignore its token and require external completion. A budget does not interrupt an infinite managed call or a yield callback that never resolves, and it is not a wall-clock timeout. No thread pool, timer-backed BCL API, execution context or cancellation preemption is added by this ABI.
+Cancellation is cooperative. A source can ignore its token and require external completion. A budget does not interrupt an infinite managed call or a yield callback that never resolves, and it is not a wall-clock timeout. The separate host-clock-v1 capability now supplies Int32 Task.Delay and timed CTS/CancelAfter, including delays in iterator finally/disposal. This stream ABI does not add a thread pool, execution context or cancellation preemption; the original abort signal is not applied to cleanup waits.
 
 ## Cleanup pending: retain, complete, retry
 
