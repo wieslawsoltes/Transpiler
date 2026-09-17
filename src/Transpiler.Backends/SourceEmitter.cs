@@ -6,13 +6,18 @@ using Transpiler.Core;
 
 namespace Transpiler.Backends;
 
-public enum SourceTarget { JavaScript, Python }
-public enum DispatchMode { Instruction, BasicBlock }
+public enum SourceTarget { JavaScript, Python, NativeStd }
+public enum DispatchMode { Instruction, BasicBlock, StackSsa }
 public sealed record SourceEmissionOptions(DispatchMode Dispatch = DispatchMode.Instruction);
 public sealed record GeneratedSource(string Text, string Extension, int MethodCount, int InstructionCount)
 {
+    public string Profile { get; init; } = "portable-mvp";
+    public NativeExport[] NativeExports { get; init; } = [];
     public DispatchMode Dispatch { get; init; }
     public int DispatchCaseCount { get; init; }
+    public int SsaMethodCount { get; init; }
+    public int SsaEliminatedInstructions { get; init; }
+    public IReadOnlyDictionary<string, int> SsaFallbacks { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>
@@ -24,9 +29,17 @@ public static class SourceEmitter
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public static GeneratedSource Emit(CompilationAnalysis analysis, SourceTarget target, SourceEmissionOptions? options = null)
     {
-        options ??= new();
+        options ??= new(target == SourceTarget.NativeStd ? DispatchMode.StackSsa : DispatchMode.Instruction);
         if (!Enum.IsDefined(options.Dispatch)) throw new ArgumentOutOfRangeException(nameof(options));
-        var blocks = options.Dispatch == DispatchMode.BasicBlock;
+        if (!Enum.IsDefined(target)) throw new ArgumentOutOfRangeException(nameof(target));
+        if (target == SourceTarget.NativeStd)
+        {
+            if (options.Dispatch != DispatchMode.StackSsa) throw new ArgumentException("native-std requires SSA emission.", nameof(options));
+            return CppNativeStdEmitter.Emit(analysis);
+        }
+        var blocks = options.Dispatch != DispatchMode.Instruction;
+        if (options.Dispatch == DispatchMode.StackSsa && analysis.Methods.Any(m => m.Ssa is null && m.SsaExclusion is null))
+            analysis = StackSsa.Prepare(analysis);
         var search = analysis.Methods.Any(m => m.Method.Exceptions.Any(c => c.Kind == "Filter"));
         var python = target == SourceTarget.Python;
         var metadata = new BackendMetadata(analysis);
@@ -73,7 +86,7 @@ public static class SourceEmitter
                 EmitMethod(body, method, metadata, analysis.Assembly, python, blocks, true);
                 output.AppendLine(ExceptionFrameEmitter.Wrap(body.ToString(), python));
             }
-            else EmitMethod(output, method, metadata, analysis.Assembly, python, blocks, false);
+            else EmitMethod(output, method, metadata, analysis.Assembly, python, blocks, false, options.Dispatch == DispatchMode.StackSsa ? method.Ssa : null);
             cases += blocks ? (method.ControlFlow ?? CilControlFlow.Build(method.Method)).Blocks.Count(b => method.StackBefore.ContainsKey(b.Start)) : method.StackBefore.Count;
             count += method.StackBefore.Count;
         }
@@ -98,7 +111,11 @@ public static class SourceEmitter
             output.AppendLine("export const manifest = Object.freeze({ assembly: metadata.assembly, profile: metadata.profile, exports: Object.keys(metadata.exports) });");
             output.AppendLine("if (metadata.entry !== null && typeof process !== 'undefined' && process.versions?.node && process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {\n    try { process.exitCode = main(process.argv.slice(2)); }\n    catch (error) { if (!(error instanceof CliError)) throw error; process.stderr.write(error.message + '\\n'); process.exitCode = 1; }\n}");
         }
-        return new(output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal), python ? ".py" : ".mjs", analysis.Methods.Length, count) { Dispatch = options.Dispatch, DispatchCaseCount = cases };
+        return new(output.ToString().Replace("\r\n", "\n", StringComparison.Ordinal), python ? ".py" : ".mjs", analysis.Methods.Length, count) { Dispatch = options.Dispatch, DispatchCaseCount = cases,
+            SsaMethodCount = options.Dispatch == DispatchMode.StackSsa ? analysis.Methods.Count(m => m.Ssa is not null) : 0,
+            SsaEliminatedInstructions = options.Dispatch == DispatchMode.StackSsa ? analysis.Methods.Sum(m => m.Ssa?.EliminatedInstructions ?? 0) : 0,
+            SsaFallbacks = options.Dispatch == DispatchMode.StackSsa ? analysis.Methods.Where(m => m.SsaExclusion is not null)
+                .GroupBy(m => m.SsaExclusion!).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()) : new Dictionary<string, int>() };
     }
 
     private static string Quote(string value) => JsonSerializer.Serialize(value);
@@ -118,16 +135,24 @@ public static class SourceEmitter
         return Convert.ToString(value, CultureInfo.InvariantCulture)!;
     }
 
-    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python, bool blocks, bool search)
+    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python, bool blocks, bool search, StackSsaGraph? ssa = null)
     {
         var method = analysis.Method;
+        var registers = ssa is null ? null : new StackSsaEmission(ssa, python);
         var leaders = blocks ? (analysis.ControlFlow ?? CilControlFlow.Build(method)).Blocks.Select(b => b.Start).ToHashSet() : [];
         var nullValue = python ? "None" : "null";
         var argumentTypes = method.IsStatic ? method.Reference.Parameters : new[] { method.Reference.Type + (image.FindType(method.Reference.Type)?.IsValueType == true ? "&" : "") }.Concat(method.Reference.Parameters).ToArray();
         var args = "[" + string.Join(", ", argumentTypes.Select((type, index) => $"R.coerce(a[{index}], {Quote(type)})")) + "]";
         var locals = "[" + string.Join(", ", method.Locals.Select(type => "R.default(" + Quote(type) + ")")) + "]";
         var clauses = JsonSerializer.Serialize(method.Exceptions, JsonOptions);
-        if (python)
+        if (registers is not null)
+        {
+            if (python)
+                output.AppendLine($"\n# {method.Key} [stack-ssa]\ndef m_{method.Token}(a):\n    a = {args}\n    l = {locals}\n    pc = 0\n    while True:\n        try:\n            match pc:");
+            else
+                output.AppendLine($"\n// {method.Key} [stack-ssa]\nfunction m_{method.Token}(a) {{\n    a = {args};\n    const l = {locals};\n    let pc = 0, x, y, z{(registers.Declarations.Length == 0 ? "" : ", " + registers.Declarations)};\n    while (true) {{\n        try {{\n            switch (pc) {{");
+        }
+        else if (python)
         {
             output.AppendLine($"\n# {method.Key}\ndef m_{method.Token}(a):\n    a = {args}\n    s = []\n    l = {locals}\n    pc = 0\n    flow = CliFlow(R, _json.loads({Quote(clauses)}))\n    while True:\n        if pc < 0:\n            raise flow.escaping\n        try:\n            match pc:");
         }
@@ -142,13 +167,25 @@ public static class SourceEmitter
                 output.AppendLine(python ? $"                case {i.Offset}:  # IL_{i.Offset:x4}: {i.Op}" : $"                case {i.Offset}: // IL_{i.Offset:x4}: {i.Op}");
             else output.AppendLine((python ? "                    # " : "                    // ") + $"IL_{i.Offset:x4}: {i.Op}");
             void Line(string text) => output.AppendLine("                    " + text + (python ? "" : ";"));
-            void Push(string expression) => Line($"s.{(python ? "append" : "push")}({expression})");
-            void Pop(string variable) => Line(variable + " = s.pop()");
-            void Jump(string expression) { Line("pc = " + expression); Line("continue"); }
+            registers?.Begin(i.Offset);
+            string PopExpression() => registers?.Pop() ?? "s.pop()";
+            void Push(string expression) => Line(registers?.Push(expression) ?? $"s.{(python ? "append" : "push")}({expression})");
+            void Pop(string variable) => Line(variable + " = " + PopExpression());
+            void Jump(string expression)
+            {
+                Line("pc = " + expression);
+                if (registers is not null) foreach (var transfer in registers.Transfers()) Line(transfer);
+                Line("continue");
+            }
+            if (registers is { Active: false })
+            {
+                if (leaders.Contains(i.NextOffset)) Jump(i.NextOffset.ToString(CultureInfo.InvariantCulture));
+                continue;
+            }
             string Kind(int fromEnd) => analysis.StackBefore[i.Offset][^fromEnd];
             string Choice(string condition, string yes, string no) => python ? $"{yes} if {condition} else {no}" : $"{condition} ? {yes} : {no}";
             // Keep the precise faulting IL offset even when several instructions share a dispatch case.
-            // No evaluation-stack, storage-copy, null/bounds-check, or type-initialization effects are elided.
+            // SSA removes total dead values only; storage-copy, managed checks and initialization effects remain.
             if (blocks) Line("pc = " + i.Offset.ToString(CultureInfo.InvariantCulture));
             if (search)
                 Line(python ? $"if not filtering: flow.pc = {i.Offset}" : $"if (!filtering) flow.pc = {i.Offset}");
@@ -164,34 +201,34 @@ public static class SourceEmitter
             else if (op is "starg" or "stloc")
             {
                 var index = (int)i.Operand!;
-                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce(s.pop(), {Quote((op == "starg" ? argumentTypes : method.Locals)[index])})");
+                Line($"{(op == "starg" ? "a" : "l")}[{index}] = R.coerce({PopExpression()}, {Quote((op == "starg" ? argumentTypes : method.Locals)[index])})");
             }
             else if (op == "ldtoken") Push(i.Operand is string typeToken
                 ? $"R.type_handle({Quote(typeToken)})" : $"R.data_handle({Quote(((FieldReference)i.Operand!).Key)})");
-            else if (op == "ckfinite") Push("R.finite(s.pop())");
+            else if (op == "ckfinite") Push($"R.finite({PopExpression()})");
             else if (op.StartsWith("ldc.", StringComparison.Ordinal)) Push(Number(i.Operand!, python));
             else if (op == "ldnull") Push(nullValue);
             else if (op == "ldstr") Push($"R.string({Quote((string)i.Operand!)}, {Bool(true, python)})");
-            else if (op == "dup") Push(python ? "R.copy_value(s[-1])" : "R.copy_value(s[s.length - 1])");
-            else if (op == "pop") Line("s.pop()");
+            else if (op == "dup") Push(registers is not null ? $"R.copy_value({registers.Peek()})" : python ? "R.copy_value(s[-1])" : "R.copy_value(s[s.length - 1])");
+            else if (op == "pop") Line(PopExpression());
             else if (op.StartsWith("conv.", StringComparison.Ordinal))
             {
                 // Fuse adjacent unsigned widening + binary32 narrowing: avoid double rounding of UInt64.
                 var conversion = op == "conv.r.un" && method.Instructions.Any(n => n.Offset == i.NextOffset && n.Op == "conv.r4")
                     ? "conv.r4.from-unsigned" : op;
-                Push($"R.convert({Quote(conversion)}, s.pop(), {Quote(Kind(1))})");
+                Push($"R.convert({Quote(conversion)}, {PopExpression()}, {Quote(Kind(1))})");
             }
-            else if (op is "neg" or "not") Push($"R.unary({Quote(op)}, s.pop(), {Quote(Kind(1))})");
+            else if (op is "neg" or "not") Push($"R.unary({Quote(op)}, {PopExpression()}, {Quote(Kind(1))})");
             else if (op is "ldftn" or "ldvirtftn")
             {
                 var reference = (MethodReference)i.Operand!;
-                Push($"R.function_pointer({Quote(metadata.MethodId(reference))}, {(op == "ldvirtftn" ? "s.pop()" : nullValue)}, {Bool(op == "ldvirtftn", python)})");
+                Push($"R.function_pointer({Quote(metadata.MethodId(reference))}, {(op == "ldvirtftn" ? PopExpression() : nullValue)}, {Bool(op == "ldvirtftn", python)})");
             }
             else if (op is "call" or "callvirt" or "newobj")
             {
                 var reference = (MethodReference)i.Operand!;
                 var count = reference.Parameters.Length + (reference.Instance && op != "newobj" ? 1 : 0);
-                Line("z = [" + string.Join(", ", Enumerable.Repeat("s.pop()", count)) + "]");
+                Line("z = [" + string.Join(", ", Enumerable.Range(0, count).Select(_ => PopExpression())) + "]");
                 if (count > 1) Line("z.reverse()");
                 var constraint = op == "callvirt" ? method.Instructions.LastOrDefault(p => p.NextOffset == i.Offset && p.Op == "constrained.")?.Operand as string : null;
                 var constraintArgument = constraint is null ? "" : ", " + Quote(constraint);
@@ -202,7 +239,7 @@ public static class SourceEmitter
             else if (op is "ldfld" or "ldsfld" or "ldflda" or "ldsflda")
             {
                 var field = (FieldReference)i.Operand!;
-                var receiver = op.StartsWith("lds", StringComparison.Ordinal) ? nullValue : "s.pop()";
+                var receiver = op.StartsWith("lds", StringComparison.Ordinal) ? nullValue : PopExpression();
                 Push($"R.{(op.EndsWith('a') ? "field_ref" : "field_get") }({receiver}, {Quote(field.Key)})");
             }
             else if (op is "stfld" or "stsfld")
@@ -211,8 +248,8 @@ public static class SourceEmitter
                 if (op == "stfld") { Pop("x"); receiver = "x"; }
                 Line($"R.field_set({receiver}, {Quote(((FieldReference)i.Operand!).Key)}, y)");
             }
-            else if (op == "newarr") Push($"R.array({Quote((string)i.Operand!)}, s.pop())");
-            else if (op == "ldlen") Push("R.array_length(s.pop())");
+            else if (op == "newarr") Push($"R.array({Quote((string)i.Operand!)}, {PopExpression()})");
+            else if (op == "ldlen") Push($"R.array_length({PopExpression()})");
             else if (op.StartsWith("ldelem", StringComparison.Ordinal))
             {
                 Pop("y"); Pop("x");
@@ -222,17 +259,17 @@ public static class SourceEmitter
             {
                 Pop("z"); Pop("y"); Pop("x"); Line($"R.array_set(x, y, z, {Quote(CompilerAnalysis.ElementType(i))})");
             }
-            else if (op.StartsWith("ldind", StringComparison.Ordinal) || op == "ldobj") Push($"R.load_ref(s.pop(), {Quote(CompilerAnalysis.ElementType(i))})");
+            else if (op.StartsWith("ldind", StringComparison.Ordinal) || op == "ldobj") Push($"R.load_ref({PopExpression()}, {Quote(CompilerAnalysis.ElementType(i))})");
             else if (op.StartsWith("stind", StringComparison.Ordinal) || op == "stobj")
             { Pop("y"); Pop("x"); Line($"R.store_ref(x, y, {Quote(CompilerAnalysis.ElementType(i))})"); }
             else if (op == "constrained.") Line(python ? "pass" : "void 0");
             else if (op == "cpobj") { Pop("y"); Pop("x"); Line($"R.store_ref(x, R.load_ref(y, {Quote((string)i.Operand!)}), {Quote((string)i.Operand!)})"); }
-            else if (op == "initobj") Line($"R.store_ref(s.pop(), R.default({Quote((string)i.Operand!)}), {Quote((string)i.Operand!)})");
-            else if (op == "box") Push($"R.box(s.pop(), {Quote((string)i.Operand!)})");
-            else if (op is "unbox" or "unbox.any") Push($"R.unbox(s.pop(), {Quote((string)i.Operand!)}, {Bool(op == "unbox", python)})");
-            else if (op is "castclass" or "isinst") Push($"R.cast(s.pop(), {Quote((string)i.Operand!)}, {Bool(op == "isinst", python)})");
+            else if (op == "initobj") Line($"R.store_ref({PopExpression()}, R.default({Quote((string)i.Operand!)}), {Quote((string)i.Operand!)})");
+            else if (op == "box") Push($"R.box({PopExpression()}, {Quote((string)i.Operand!)})");
+            else if (op is "unbox" or "unbox.any") Push($"R.unbox({PopExpression()}, {Quote((string)i.Operand!)}, {Bool(op == "unbox", python)})");
+            else if (op is "castclass" or "isinst") Push($"R.cast({PopExpression()}, {Quote((string)i.Operand!)}, {Bool(op == "isinst", python)})");
             else if (op == "ret")
-            { Line("return " + (method.Reference.ReturnType == "System.Void" ? nullValue : $"R.coerce(s.pop(), {Quote(method.Reference.ReturnType)})")); terminal = true; }
+            { Line("return " + (method.Reference.ReturnType == "System.Void" ? nullValue : $"R.coerce({PopExpression()}, {Quote(method.Reference.ReturnType)})")); terminal = true; }
             else if (op == "br") { Jump(Number(i.Operand!, python)); terminal = true; }
             else if (op is "brtrue" or "brfalse")
             {
@@ -247,9 +284,9 @@ public static class SourceEmitter
                 Jump(Choice(condition, "z[x]", i.NextOffset.ToString(CultureInfo.InvariantCulture))); terminal = true;
             }
             else if (op == "leave") { Jump($"flow.leave(pc, {i.Operand}, s)"); terminal = true; }
-            else if (op == "endfilter") { Line("return s.pop()"); terminal = true; }
+            else if (op == "endfilter") { Line("return " + PopExpression()); terminal = true; }
             else if (op == "endfinally") { Jump("flow.resume(s)"); terminal = true; }
-            else if (op == "throw") { Line("R.raise_value(s.pop())"); terminal = true; }
+            else if (op == "throw") { Line($"R.raise_value({PopExpression()})"); terminal = true; }
             else if (op == "rethrow") { Line("flow.rethrow(pc)"); terminal = true; }
             else
             {
@@ -262,7 +299,14 @@ public static class SourceEmitter
             }
             if (!terminal && (!blocks || leaders.Contains(i.NextOffset))) Jump(i.NextOffset.ToString(CultureInfo.InvariantCulture));
         }
-        if (python)
+        if (registers is not null)
+        {
+            if (python)
+                output.AppendLine("                case _:\n                    raise RuntimeError('Invalid generated program counter: ' + str(pc))\n        except CliError:\n            raise");
+            else
+                output.AppendLine("                default: throw new Error('Invalid generated program counter: ' + pc);\n            }\n        } catch (error) { throw error; }\n    }\n}");
+        }
+        else if (python)
             output.AppendLine("                case _:\n                    raise RuntimeError('Invalid generated program counter: ' + str(pc))\n        except CliError as error:\n            pc = flow.handle(error, pc, s)");
         else
             output.AppendLine("                default: throw new Error('Invalid generated program counter: ' + pc);\n            }\n        } catch (error) {\n            if (!(error instanceof CliError)) throw error;\n            pc = flow.handle(error, pc, s);\n        }\n    }\n}");

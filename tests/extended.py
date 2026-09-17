@@ -9,3 +9,7 @@ def register(h):
     identity_batch.register(h)
     import safety_batch
     safety_batch.register(h)
+    import ssa_batch
+    ssa_batch.register(h)
+    import native_batch
+    native_batch.register(h)

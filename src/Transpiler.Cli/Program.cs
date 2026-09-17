@@ -22,11 +22,17 @@ internal static class Program
         {
             if (args.Length == 0 || args[0] is "--help" or "-h" or "help") { Console.WriteLine(Help); return 0; }
             options = Parse(args);
+            if (options.Target is "cpp" or "native-std")
+            {
+                if (options.DispatchExplicit && options.Dispatch != "ssa") throw new ArgumentException("native-std supports --dispatch ssa only.");
+                options.Dispatch = "ssa";
+            }
             if (options.Command == "capabilities")
             {
                 var text = JsonSerializer.Serialize(new
                 {
-                    schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" }, dispatchModes = new[] { "instruction", "block" },
+                    schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" }, dispatchModes = new[] { "instruction", "block", "ssa" },
+                    nativeStd = new { profile = CppNativeStdEmitter.Profile, targets = new[] { "native-std", "cpp" }, types = CppNativeStdEmitter.SupportedTypes, opcodes = CppNativeStdEmitter.SupportedOpcodes, libraryOnly = true },
                     opcodes = CompilerAnalysis.SupportedOpcodes, intrinsics = IntrinsicCatalog.All,
                     limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "limited type identity only; no member reflection or native interop", "two-pass managed filters; no native exception/stack trace parity", "not a security verifier" }
                 }, Json);
@@ -71,6 +77,7 @@ internal static class Program
             assembly = PortableCompilation.Link(assembly, options.References,
                 new LinkOptions(options.Bcl, options.ReferencePack, options.CoreLibrary));
             var analysis = CompilerAnalysis.Analyze(assembly);
+            if (options.Dispatch == "ssa") analysis = StackSsa.Prepare(analysis);
             if (options.Command == "analyze")
             {
                 var text = JsonSerializer.Serialize(analysis, Json);
@@ -81,13 +88,15 @@ internal static class Program
             {
                 "js" or "javascript" => SourceTarget.JavaScript,
                 "py" or "python" => SourceTarget.Python,
-                _ => throw new ArgumentException("--target must be javascript (js) or python (py).")
+                "cpp" or "native-std" => SourceTarget.NativeStd,
+                _ => throw new ArgumentException("--target must be javascript (js), python (py) or native-std (cpp).")
             };
             var dispatch = options.Dispatch switch
             {
                 "instruction" => DispatchMode.Instruction,
                 "block" => DispatchMode.BasicBlock,
-                _ => throw new ArgumentException("--dispatch must be instruction or block.")
+                "ssa" => DispatchMode.StackSsa,
+                _ => throw new ArgumentException("--dispatch must be instruction, block or ssa.")
             };
             var generated = SourceEmitter.Emit(analysis, target, new SourceEmissionOptions(dispatch));
             var destination = RequireOutput(options);
@@ -95,7 +104,7 @@ internal static class Program
             Write(destination, generated.Text);
             if (options.Manifest is not null) Write(options.Manifest, JsonSerializer.Serialize(new
             {
-                schema = 2, target = target.ToString(), dispatch = options.Dispatch, bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
+                schema = 2, target = target.ToString(), profile = generated.Profile, nativeExports = generated.NativeExports, dispatch = options.Dispatch, ssa = new { generated.SsaMethodCount, generated.SsaEliminatedInstructions, generated.SsaFallbacks }, bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
                 forwardings = assembly.ForwardingBindings, assemblies = assembly.Inputs, referencePack = managed?.ReferencePack?.Inputs,
                 transpiled = analysis.Methods.Where(m => m.Method.Instructions.Length != 0)
                     .Select(m => new { assembly = m.Method.Reference.Assembly, method = m.Method.Key, instructions = m.Method.Instructions.Length }),
@@ -103,7 +112,7 @@ internal static class Program
                     .Where(m => analysis.Assembly.Resolve(m) is null).Select(m => new { method = m.Key, binding = IntrinsicCatalog.Find(m, analysis.Assembly) }).Distinct()
             }, Json));
             if (options.Diagnostics is not null) Write(options.Diagnostics, "[]\n");
-            Console.WriteLine(JsonSerializer.Serialize(new { output = destination, target = target.ToString(), generated.MethodCount, generated.InstructionCount, generated.DispatchCaseCount, dispatch = options.Dispatch, bytes = Encoding.UTF8.GetByteCount(generated.Text), profile = "portable-mvp" }));
+            Console.WriteLine(JsonSerializer.Serialize(new { output = destination, target = target.ToString(), generated.MethodCount, generated.InstructionCount, generated.DispatchCaseCount, generated.SsaMethodCount, generated.SsaEliminatedInstructions, generated.SsaFallbacks, dispatch = options.Dispatch, bytes = Encoding.UTF8.GetByteCount(generated.Text), profile = generated.Profile, nativeExports = generated.NativeExports }));
             return 0;
         }
         catch (CompilationException error)
@@ -147,7 +156,7 @@ internal static class Program
             {
                 case "--out": case "-o": options.Output = Value(); break;
                 case "--target": case "-t": options.Target = Value(); break;
-                case "--dispatch": options.Dispatch = Value(); break;
+                case "--dispatch": options.Dispatch = Value(); options.DispatchExplicit = true; break;
                 case "--ir": options.IrOutput = Value(); break;
                 case "--diagnostics": options.Diagnostics = Value(); break;
                 case "--reference": case "-r": options.References.Add(Value()); break;
@@ -175,6 +184,7 @@ internal static class Program
         public string? Output { get; set; }
         public string? Target { get; set; }
         public string Dispatch { get; set; } = "instruction";
+        public bool DispatchExplicit { get; set; }
         public string? IrOutput { get; set; }
         public string? Diagnostics { get; set; }
         public bool Bcl { get; set; }
@@ -185,9 +195,9 @@ internal static class Program
         public bool Debug { get; set; }
     }
     private const string Help = """
-        Transpiler — Roslyn / PE-CIL to standalone JavaScript and Python
+        Transpiler — Roslyn / PE-CIL to JavaScript, Python and bounded C++20
 
-        dotnet Transpiler.Cli.dll compile <source.cs ... | assembly.dll> --target js|py --out file
+        dotnet Transpiler.Cli.dll compile <source.cs ... | assembly.dll> --target js|py|native-std --out file
         dotnet Transpiler.Cli.dll emit-pe <source.cs ...> --out application.dll
         dotnet Transpiler.Cli.dll inspect <assembly.dll> [--out metadata.json]
         dotnet Transpiler.Cli.dll analyze <source.cs ... | assembly.dll> [--out analysis.json]
@@ -196,8 +206,9 @@ internal static class Program
         Options: --library, --debug, --reference path.dll (repeatable),
                  --ir analysis.json, --diagnostics diagnostics.json, --manifest provenance.json,
                  --bcl portable|none, --reference-pack directory, --corelib implementation.dll,
-                 --dispatch instruction|block
+                 --dispatch instruction|block|ssa
 
+        native-std: C++20 integral libraries only (--library); always SSA; no managed object runtime.
         C# compilation requires .NET 10 / Roslyn. Generated .mjs and .py programs do not.
         portable-mvp is an explicit subset, not universal CLI or .NET library compatibility.
         """;

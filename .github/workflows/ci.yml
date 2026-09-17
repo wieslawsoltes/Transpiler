@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Native compiler inventory
+        run: |
+          g++ --version
+          clang++ --version
       - name: Build
         run: dotnet build Transpiler.slnx -c Release
       - name: Differential conformance
