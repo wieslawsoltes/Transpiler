@@ -1,6 +1,6 @@
 # Architecture decisions
 
-Updated 2026-09-16. Historical initial decisions are preserved in [0.1](history/0.1/decisions.md).
+Updated 2026-09-17. Historical initial decisions are preserved in [0.1](history/0.1/decisions.md).
 
 ## ADR-001 — Real PE/CIL remains canonical: accepted
 
@@ -16,7 +16,7 @@ Preserve constructed identities, generic statics and storage semantics. Add expl
 
 ## ADR-004 — Verify nonzeroed locals rather than forbid or approximate them: accepted
 
-Normal-flow must-assignment permits useful real BCL bodies without accepting uninitialized reads. Intersect predecessor facts, including loop-entry paths. Reject unproven address and exceptional-flow initialization. Keep this targeted proof separate from claims of full ECMA verification.
+Normal-flow must-assignment permits useful real BCL bodies without accepting uninitialized reads. Intersect predecessor facts, including loop-entry paths. Use conservative pre-instruction handler/filter facts for exceptional flow; reject unproven address-first and cleanup-dependent initialization. Keep this targeted proof separate from claims of full ECMA verification.
 
 ## ADR-005 — Conservative source backend remains an oracle: accepted
 
@@ -36,7 +36,7 @@ Execute actual Roslyn state machines against translated managed builders and a F
 
 ## ADR-009 — Exception filters require search-before-unwind: accepted
 
-Do not approximate cross-frame filters with predicates after the host stack has unwound. Retain explicit rejection until a two-pass managed-frame protocol and region verification are implemented.
+Do not approximate cross-frame filters with predicates after the host stack has unwound. Implemented through live managed frames and a reentrant filter entry point sharing locals/arguments but not operand stacks. Region verification rejects invalid filter layout, and CoreCLR differential tests cover search ordering, helper errors, initializer boundaries and fault unwinding. Native trace parity is not implied.
 
 ## ADR-010 — Native source profiles have different runtime obligations: proposed
 
@@ -49,3 +49,11 @@ Implement IValueTaskSource, the reusable completion core, builder, configured en
 ## ADR-012 — Single consumption and trace/context boundaries are explicit: accepted
 
 Source-backed values require token-aware single consumption; AsTask/Preserve provides repeatable Task-backed use. Clear callback state before invoking reentrant user code and test reset-on-consumption. Forward source flags without claiming execution-context capture. ExceptionDispatchInfo preserves the managed exception object only; exact .NET trace/remote-stack behavior remains unsupported.
+
+## ADR-013 — Structural codec migration is not full signature fidelity: accepted
+
+Centralize recursive scope-aware rewriting and explicit forwarder resolution now, while documenting legacy importer/specializer boundaries. Do not describe the codec model as a lossless CLI signature or multi-context loader implementation. Preserve exact substitution boundaries and record used forwarding paths.
+
+## ADR-014 — Host lifetime is not valid CLI byref provenance: accepted
+
+Reject returned addresses potentially tied to this method's frame or unknown storage, including aliases forwarded through opaque byref-returning calls. Host closures extending a storage cell's lifetime cannot justify an invalid managed escape. Keep this conservative proof distinct from full scoped-ref and interprocedural verification.

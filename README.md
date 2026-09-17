@@ -27,6 +27,20 @@ python3 artifacts/hello.py hello
 
 To compile existing assemblies, pass the root DLL instead of source and repeat `--reference dependency.dll` for implementation dependencies. Framework source binding uses a selected reference pack, not executable reference stubs. `--reference-pack`, `--corelib`, `--manifest`, `--ir` and `--diagnostics` expose those boundaries.
 
+## Two-pass filters, forwarding and verification
+
+Exception filters now execute against live managed activations **before** callee finally/fault unwinding. Tests cover rejecting/throwing filters, helper exceptions, initializer wrapping, rethrow identity and cleanup replacement. Modules needing filters select the `two-pass-managed-v1` runtime; both dispatch modes are supported.
+
+The linker now reads explicit ExportedType forwarders and resolves moved generic/nested/value types without recompiling the consumer DLL. Type rewriting is structural and scope-aware instead of substring replacement. The new address analysis rejects local-frame byref escapes and incompatible indirect storage; local assignment propagates conservative exception-entry facts.
+
+```bash
+dotnet "$CLI" compile samples/ExceptionFilters.cs --dispatch block \
+  --target js --out artifacts/filters.mjs
+node artifacts/filters.mjs
+```
+
+This is not complete signature/loader fidelity or a full security verifier. Read the [implemented contract](docs/linking-verification.md) and [primary-source research](docs/research/filters-forwarding-2026-09-17.md).
+
 ## Async streams: actual compiler-generated state machines
 
 ```bash
@@ -116,8 +130,10 @@ python3 tests/conformance.py
 dotnet "$CLI" capabilities --out artifacts/capabilities.json
 ```
 
-The expanded native-stream implementation passed the full **125-case local gate, 0 failures**, on SDK 10.0.100, Node 22.16.0 and Python 3.13.5. Its CI and artifact evidence are recorded in [validation](docs/validation-summary.md). The gate contains **125 harness cases**: 100 ordinary/BCL Debug/Release console configurations, five negative fixtures, library/malformed-PE checks and 18 extended gates. Console configurations generate 200 target executions; the cross-emitter gate adds 96. Four native-stream configurations add 22 JavaScript and 23 Python lifecycle scenario groups each, CoreCLR value comparison and deterministic emission. Other graph/host/heap tests add further executions. One case may contain many assertions. These are not CLI coverage percentages. Observed results and exact environments are in [validation](docs/validation-summary.md).
+The full local and implementation-CI gates passed **135 cases, 0 failures**. The corpus contains **135 cases**: 106 ordinary/BCL Debug/Release configurations, four negative fixtures, library/malformed-PE checks and 23 extended gates. The ordinary configurations account for 212 generated console executions; instruction/block, live-frame retirement, host-stream, forwarding and raw-IL gates add further executions. Identity checks include 25 assertions and the new safety gate includes 22. Counts are not CLI coverage percentages. See [validation](docs/validation-summary.md) for observed results and exact commits.
+
+The harness records whether a run is complete or filtered and refuses empty success. `TRANSPILER_TEST_WORKERS=2 python3 tests/conformance.py` uses bounded parallel case execution with deterministic report ordering; CI clears the filter and uses two workers.
 
 [Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
 
-The project does not yet provide full exception filters, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC, SSA or C++ output. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).
+The project does not yet provide complete signature/loader or verification fidelity, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC, SSA or C++ output. Managed two-pass filters and explicit scoped forwarding are implemented, with remaining limits documented. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).

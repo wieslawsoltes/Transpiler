@@ -17,3 +17,7 @@ Forced collection, finalizers, resurrection, pinning, native calls and broad I/O
 Native stream adapters own their acquired enumerator until disposal completes or fails terminally. A StreamCleanupPendingError leaves a retained cursor and outstanding operation; ignoring it is not safe resource cleanup. Keep the adapter, complete the application operation and retry close. Neither host garbage collection nor an asynchronous finalizer promises to execute abandoned managed cleanup.
 
 Abort/cancellation and pump limits are cooperative and do not interrupt a non-returning managed method or a host yield callback that never resolves. Hooks are trusted, must not await their own adapter operations and must provide their own external limits. Adapters are one-event-loop/single-thread objects, not cross-thread synchronization primitives. Diagnostic cursor fields/counters are not security capabilities or a serialized ABI.
+
+## New verification and forwarding boundaries
+
+Scoped forwarding checks supplied identities and final definitions but does not authenticate assemblies or model multiple load contexts. The structural type codec is not complete lossless CLI signature validation. Exception-local and returned-address analyses are conservative targeted checks, not full ECMA type/lifetime safety proofs. Live-frame filter evaluation executes user code in the generated application; it is not a sandbox or a bounded callback. A non-returning filter still requires external process limits.

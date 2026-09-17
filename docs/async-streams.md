@@ -81,4 +81,4 @@ Update 2026-09-17: the generated `stream` API now adapts exports declared as IAs
 
 The instruction/block equivalence gate includes async streams and source-backed values. The host-source gate checks that completion-core and Task-conversion algorithms appear as emitted managed bodies, not new JS/Python intrinsic implementations. See [testing](testing.md) for the full gate and [research](research/async-streams-2026-09-16.md) for source references.
 
-No claim is made for concurrent Reset/completion/registration, pool allocation parity, context capture, arbitrary async LINQ, timers/thread pools, full exception traces or all adversarial IL. Exception filters remain a separate unsupported search-before-unwind feature.
+No claim is made for concurrent Reset/completion/registration, pool allocation parity, context capture, arbitrary async LINQ, timers/thread pools, full exception traces or all adversarial IL. Update 2026-09-17: managed exception filters now use the tested two-pass search protocol; see [linking and verification](linking-verification.md). This does not add native trace/context/thread parity.

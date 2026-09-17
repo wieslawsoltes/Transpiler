@@ -41,3 +41,23 @@ The four cases compare native streamed output with a CoreCLR consumer of the sam
 These results do not establish full BCL/CLI conformance, immediate cleanup of uncooperative sources, cross-loop/thread operation, native generator send/asend semantics, all object marshalling or a preemptive timeout. The final commit and CI artifact should be preserved with their report and notices; subsequent documentation-only changes do not alter the tested compiler implementation.
 
 The local Git tree of the complete tested source/test snapshot is `51d6d3c0c6bf5c26d7646ef391fd46cbe785591a`, exactly matching remote implementation commit `102cfb35e4f93b18e0c2f19895e23e0cd844c55a`. This verifies all file bytes and Git modes against the passed local implementation, independently of CI completion.
+
+
+## Filters, forwarding and verification — 2026-09-17
+
+The recovered starting point was `8985bb650586415c9b54ecdeed69a80c9e1bf772`, with the exception-search runtime committed but not enabled by the compiler. This continuation integrated and tested that runtime, added structural rewriting/explicit forwarding, and strengthened managed-address and exception-local validation.
+
+Implementation/test commit **`4459251af2d6204537dd8fd676f4b88f720bfb58`**, tree **`a41758f59a7735213996fba22156852e3416ffe7`**, passed [workflow 35208855495](https://github.com/wieslawsoltes/Transpiler/actions/runs/35208855495). Build, full conformance, notices and packaging completed successfully.
+
+Downloaded artifact **10491512104** has SHA-256 `bb0259e10637291503e34f8ae44aeb5571ff0daadfa043d31fec2d688eb078cd`. The source ZIP comment identifies the exact implementation commit. All compiler, test and workflow files were compared with the independently tested local checkout: **zero mismatches**.
+
+The inspected report records **135 passed, 0 failed**, `complete: true`, `registeredCases: 135`, `selectedCases: 135`, an empty filter and two workers. CI used SDK **10.0.401**, Node **22.23.2**, Python **3.13.15**, Linux x64/glibc 2.39. The independent full local run also passed **135/135**, using SDK **10.0.100**, Node **22.16.0**, Python **3.13.5**, Linux x64/glibc 2.41. An earlier interrupted exploratory run is not counted as a full pass.
+
+The added gates include 25 structural/forwarding assertions, 22 safety/filter-layout assertions, a client DLL left unchanged while its contract assembly is replaced with a facade, 32 filter/order/activation-retirement target executions, and four persisted fault-IL executions. The latter runs non-InitLocals exception code and observes `normal path`, `filter before fault`, `fault during unwind`, `filtered catch`, `42` on CoreCLR and both backends.
+
+The standalone filter sample was executed locally with JavaScript block dispatch and Python instruction dispatch. Both observe the filter reading state 1 before the callee's finally changes it, followed by the catch observing state 2. Its generated methods total 36 analyzed instructions; block dispatch uses 10 cases and instruction dispatch 36. This is an emission inventory, not a runtime speedup claim.
+
+This evidence covers the declared managed subset, not complete loader/signature/verification fidelity, native exception traces, all CLI inputs, context/thread/timer services, SSA, generalized reflection/marshalling, ordinary-object logical-GC integration or C++ backends. Documentation-only successors do not change this tested implementation; release source, reports and input notices must retain their exact revision relationship.
+
+
+Independent execution-only replay of the downloaded artifact passed **374 target executions, 0 failures** under Node 22.16.0 and Python 3.13.5, with `dotnet` absent from the child execution PATH. Generated source bytes were not modified. Python frame-retirement driver scripts contain their original CI absolute import path; replay copies of those drivers changed only that path to the corresponding downloaded source location. The replay includes the 212 ordinary console outputs, block/reference comparisons, logical heaps, native streams, filter/order/retirement checks, forwarding, raw fault IL and selected library/source-host ABI drivers. This is separate evidence from compilation conformance and does not imply every possible target program was tested.

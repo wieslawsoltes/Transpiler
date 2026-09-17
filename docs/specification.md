@@ -21,7 +21,7 @@ Commands: compile, emit-pe, inspect, analyze and capabilities.
 
 Exit status is 0 success, 1 compilation/capability rejection, 2 usage/file failure. Successful target writes replace via a temporary file. Failure does not delete an older file at that path; callers must check status. Sidecar writes are not one multi-file transaction.
 
-Linking is single-load-context with one version per assembly simple name and explicit inputs. It checks requested identities and rejects conflicting/reference-only implementation inputs. It is not general forwarding, multi-version binding or automatic package restore. Executable entry points and eligible public static root-library methods are roots; open generic exports require further design.
+Linking is single-load-context with one version per assembly simple name and explicit inputs. It checks requested identities and rejects conflicting/reference-only implementation inputs. Explicit scoped ExportedType forwarding chains are supported, including nested types and exact destination identities. General framework-facade normalization, multi-version/load-context binding and automatic package restore remain outside the contract. Structured rewriting covers the current codec, not all CLI modifier/function-pointer/calling-convention information. Executable entry points and eligible public static root-library methods are roots; open generic exports require further design.
 
 Selected budgets remain 256 modules, 16,384 specialized methods, 4,096 constructed types and 4,096 characters per constructed identity. CFG validation limits exception clauses to 512. These are not complete process resource quotas.
 
@@ -35,11 +35,11 @@ The reviewed original CoreLib catalog contains BigMul(Int32,Int32), integer Min/
 
 ## Control flow and exceptions
 
-Stack joins, local assignment and protected-region/prefix transfers are checked. Exceptional CFG edges are conservative metadata, not a full executable exception-search IR. Non-InitLocals methods require normal-flow must-assignment before local reads/address acquisition; address-first and exceptional initialization remain conservative.
+Stack joins, local assignment and protected-region/prefix transfers are checked. Exceptional CFG edges are conservative metadata, not a full executable exception-search IR. Non-InitLocals methods require must-assignment before reads/address acquisition, including conservative pre-instruction handler/filter facts. Address-first initialization and values assigned solely by finally/filter continuations remain conservative. Returned byrefs are checked for frame/unknown origin; typed indirect accesses require compatible storage. These targeted checks do not constitute full ECMA verification.
 
 Block dispatch reduces cases by coalescing straight-line instructions. Managed checks and fault offsets remain. It is not SSA, preemption or an optimizer allowed to reorder side effects. Instruction mode remains the differential baseline.
 
-Throw/catch/rethrow/leave/finally preserve tested managed identity and continuation behavior. ExceptionDispatchInfo supports Capture, SourceException and instance/static Throw only as identity-preserving managed operations. .NET stack/Watson state, remote stack injection and full fault-clause behavior are not certified. Exception filters remain rejected until correct cross-frame search-before-unwind exists.
+Throw/catch/rethrow/leave/finally preserve tested managed identity and continuation behavior. ExceptionDispatchInfo supports Capture, SourceException and instance/static Throw only as identity-preserving managed operations. .NET stack/Watson state, remote stack injection and full fault-clause behavior are not certified. Managed Filter/endfilter is implemented through two-pass live-activation search before unwind. A filter has one final endfilter, no embedded try region and an Int32 result. Exceptions escaping its evaluation reject the filter; called helpers may handle their own exceptions. Handler/initializer interception and search-plan retirement are explicit. Both dispatch modes are tested; modules without reachable filters keep the existing lighter runtime. See [the detailed contract](linking-verification.md).
 
 ## Cooperative async and source-backed values
 
@@ -76,3 +76,7 @@ The compiler roots a closed translated StreamCursor<T> for each exact-interface 
 Exhaustion and move/current faults clean up; JS early loop exit calls return, while Python early exit needs async with, contextlib.aclosing or explicit aclose. Source-ignored cancellation or deferred disposal can raise StreamCleanupPendingError, retaining ownership and phase for a later close retry. Closed is false until retirement; activeStreams includes pending cleanup. There is no automatic finalizer or safe forced concurrent disposal of an uncompleted move.
 
 Native loop exception precedence is preserved, including JavaScript's preference for an existing body exception over close failure and Python's chaining of body errors under cleanup failure. Borrowed abort listeners and enumeration-owned references are retired at terminal close. Trusted completion hooks must not await operations on their own adapter. Cross-thread/cross-loop operations, arbitrary concrete/object/Task-wrapped stream exports and complete object serialization remain unsupported. [The full contract](host-streams.md) contains examples, pending cleanup recovery and validation details.
+
+## Additional diagnostics and provenance
+
+Manifest `forwardings` records used source/destination mappings alongside assembly hashes. TR3010 rejects duplicate/conflicting forwarders; TR3011 cycles/budgets; TR3012 missing destinations; TR3013 missing final definitions; TR3014 target identity mismatch; TR3020 bounded type-codec errors. TR2120 identifies unsafe managed-address origins/storage and TR2121 incompatible indirect access. Existing TR2006 and TR2110 now also cover conservative exception-local assignment and filter layout.
