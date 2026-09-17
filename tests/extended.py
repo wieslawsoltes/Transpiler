@@ -125,6 +125,8 @@ def boundaries(h):
 
 
 def register(h):
+    import host_stream_batch
+    host_stream_batch.register(h)
     import stream_batch
     stream_batch.register(h)
     import block_batch
