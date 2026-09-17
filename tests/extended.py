@@ -13,3 +13,5 @@ def register(h):
     ssa_batch.register(h)
     import native_batch
     native_batch.register(h)
+    import timer_batch
+    timer_batch.register(h)
