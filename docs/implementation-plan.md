@@ -1,12 +1,12 @@
 # Remaining implementation plan
 
-Updated 2026-09-16. This ledger replaces obsolete initial-MVP exclusions. Completed slices remain qualified by [compatibility](compatibility.md), not by broad feature-family names.
+Updated 2026-09-17. This ledger replaces obsolete initial-MVP exclusions. Completed slices remain qualified by [compatibility](compatibility.md), not by broad feature-family names.
 
 ## Delivered foundation
 
 Real PE/CIL input and Roslyn frontend; explicit assembly linking/reference contracts; bounded generics; structs/nullable and managed references; tested interfaces/delegates/object bridges; collections/comparers/LINQ; original CoreLib slices; binary32/RVA/rectangular arrays and limited type handles; task composition/cancellation; source-backed ValueTask and async iterator/disposal protocols; protected-region CFG/block emission; host lifetime services and a separate translated logical collector.
 
-The latest async work is library-protocol implementation, not completion of threading/contexts, native host iterator marshalling or all BCL APIs. The existing instruction emitter remains a correctness oracle.
+The latest continuation adds native JS/Python async-iterator adapters backed by a translated owning cursor. It does not complete threading/contexts, arbitrary serialization or all BCL APIs. The existing instruction emitter remains a correctness oracle.
 
 ## 1. Typed identity, resolution and provenance
 
@@ -22,7 +22,7 @@ Acceptance: adversarial hand-authored IL and randomized CFG/type tests, instruct
 
 ## 3. Async host capability expansion
 
-Keep the single-thread/no-context profile explicit. Add native JS/Python async-iterator adapters with exactly-once disposal, cancellation/early-return handling and scoped enumeration ownership. Define external completion/timer/clock adapters before Task.Delay or timer-based cancellation. Add context flow and concurrency only under separate implemented policies.
+Keep the single-thread/no-context profile explicit. The exact-interface native JS/Python async-iterator adapters are delivered with single-consumption, cancellation, scoped ownership and resumable cleanup. Next expand concrete/Task-wrapped export discovery and result marshalling only with explicit ownership/identity rules. Define external completion/timer/clock adapters before Task.Delay or timer-based cancellation. Add context flow and concurrency only under separate implemented policies.
 
 Acceptance: cancellation before/during move, host early return/exception, disposal failure, source reuse, simultaneous host operations and callback cleanup. Respect ValueTask single-consumption and short-token rollover. A step budget is not a watchdog. No concurrent ManualResetValueTaskSourceCore contract is claimed until synchronization is implemented and tested.
 

@@ -1,6 +1,6 @@
 # Current compatibility ledger
 
-Updated 2026-09-16. Both targets share the compiler analysis and lowering. Entries describe implemented/tested slices, not exhaustive ECMA/.NET compatibility. Metadata schema 2, profile `portable-mvp`, optional `portable-bcl-v1`.
+Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entries describe implemented/tested slices, not exhaustive ECMA/.NET compatibility. Metadata schema 2, profile `portable-mvp`, optional `portable-bcl-v1`.
 
 | Area | Implemented/tested | Still outside the guarantee |
 |---|---|---|
@@ -22,12 +22,13 @@ Updated 2026-09-16. Both targets share the compiler analysis and lowering. Entri
 | Cancellation | Tokens, registrations, linked CTS, reentrant callbacks, selected WaitAsync and token-carrying faults | Timers/WaitHandle, concurrent cancellation, context capture |
 | ValueTask | Result/Task/source-backed values, awaiters, AsTask/Preserve, selected factories/equality | Pooling/allocation parity and arbitrary invalid multiple consumption |
 | Completion sources | IValueTaskSource interfaces and sequential reusable ManualResetValueTaskSourceCore | Multithreaded registration/completion, actual execution/scheduling context |
-| Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations and native host async-generator marshalling |
+| Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations; arbitrary concrete/Task-wrapped stream exports |
 | Async disposal | IAsyncDisposable, configured await using, awaited finally, early exit and exception replacement | All resources/host lifetime integrations |
 | Exceptions | Throw/catch/rethrow/leave/finally, selected aggregation and identity-preserving ExceptionDispatchInfo | Filters, exact .NET traces/Watson state, remote stack injection, full fault-clause certification |
 | CFG / verification | Prefix/boundary/region validation, stack joins, normal-flow definite local assignment | Complete verifier, byref escape analysis and exceptional assignment proofs |
 | Source emission | Instruction reference mode and validated basic-block mode | SSA, stack elimination, source maps, idiomatic reconstruction |
-| Host ABI | Primitive/string/selected array inputs, Task/ValueTask results, output/root APIs | General byref/callback/native async iterator/object transport across modules |
+| Host ABI | Primitive/string/selected array inputs, Task/ValueTask results, native stream protocol adapters, output/root APIs | General byref/callback/serialization/object transport across modules |
+| Host stream ownership | Lazy exact-interface exports, single-consumption moves/disposal, cancellation, Python close scopes, resumable cleanup | Uncooperative-source prompt cleanup, cross-loop/thread use, abandoned-adapter finalizers |
 | Host lifetime | Weak references, identity hash, KeepAlive and explicit roots | Forced CLR collection, finalizers/resurrection/pinning |
 | Logical GC | Translated C# bounded mark/sweep with its own explicit-root graph oracle | Ordinary-object integration, implicit locals, relocation/generations/concurrency |
 | Platforms | Node/Python differential hosts | Browser/OS/ARM64 qualification and actual C++ backends |
@@ -35,8 +36,10 @@ Updated 2026-09-16. Both targets share the compiler analysis and lowering. Entri
 
 ## Evidence and terminology
 
-The configured gate contains **121 cases**: 100 ordinary/BCL console configurations, five negative fixtures, library ABI and malformed PE, plus 14 extended gates. Each ordinary/BCL configuration runs both generated targets: 200 executions. The block comparison checks 12 programs in two source modes and two targets: 48 instruction/block pairs, or 96 target executions. Additional host, graph and logical-heap tests perform further executions.
+The configured gate contains **125 cases**: 100 ordinary/BCL console configurations, five negative fixtures, library ABI and malformed PE, plus 18 extended gates. Each ordinary/BCL configuration runs both generated targets: 200 executions. The block comparison checks 12 programs in two source modes and two targets: 48 instruction/block pairs, or 96 target executions. Additional host, graph and logical-heap tests perform further executions.
 
 The four new source/stream fixtures add eight differential cases, and the source-host/provenance test adds one extended case. Source callback flags, stale tokens, single consumption, reset reentrancy, cleanup and cancellation are directly tested. The current report, not the configured count, records observed success; see [validation](validation-summary.md).
 
 Capabilities lists opcodes and fixed intrinsic signatures. Generic contract patterns, legal type combinations, metadata, BCL members, host services and performance are separate dimensions. No full-CLI percentage is claimed. [Async contracts](async-streams.md) describe the no-context scheduling and exception-trace boundaries precisely.
+
+The native-host continuation adds four Debug/Release × instruction/block configurations. Each runs 22 JavaScript and 23 Python lifecycle groups plus an ordinary CoreCLR stream consumer oracle. It checks deferred acquisition, no overlapping move/disposal, exact source consumption, timed-out cleanup recovery, listener retirement and error precedence. `StreamCleanupPendingError` is not successful disposal; active ownership remains visible.

@@ -11,3 +11,9 @@ Generated code is executable code. Host output callbacks and application-supplie
 Default runtime root handles and logical-heap handles express ownership only; they are not authorization tokens. The logical heap validates its own address ownership/generations, but it is not a native memory protection mechanism or the default generated-object collector. Its quotas cover logical payload/reference/table capacities, not total process memory, host frame allocations or execution time.
 
 Forced collection, finalizers, resurrection, pinning, native calls and broad I/O/threading capabilities are not implicitly enabled. Future adapters must declare their capability, lifetime and trust contracts explicitly. Add hostile metadata fuzzing, full region/byref verification, cancellation/resource controls and host matrices before production exposure.
+
+## Host stream ownership
+
+Native stream adapters own their acquired enumerator until disposal completes or fails terminally. A StreamCleanupPendingError leaves a retained cursor and outstanding operation; ignoring it is not safe resource cleanup. Keep the adapter, complete the application operation and retry close. Neither host garbage collection nor an asynchronous finalizer promises to execute abandoned managed cleanup.
+
+Abort/cancellation and pump limits are cooperative and do not interrupt a non-returning managed method or a host yield callback that never resolves. Hooks are trusted, must not await their own adapter operations and must provide their own external limits. Adapters are one-event-loop/single-thread objects, not cross-thread synchronization primitives. Diagnostic cursor fields/counters are not security capabilities or a serialized ABI.

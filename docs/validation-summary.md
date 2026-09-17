@@ -29,3 +29,15 @@ The 121 harness cases comprise 100 ordinary/BCL console configurations, five neg
 The evidence covers the observed semantic, provenance, cleanup, deterministic-output and emission-size contracts. It does not certify threading/context capture, timers, all ValueTask misuse, full async LINQ, native host-generator marshalling, exact .NET traces, exception filters, full reflection/BCL/CLI support, performance or security isolation.
 
 Later documentation-only commits do not alter the implementation milestone. The latest branch's own workflow and source ZIP are authoritative for its exact revision. Preserve final source, report, implementation inputs, toolchain and notices together.
+
+## Native host-stream continuation — 2026-09-17
+
+Recovered main `db6b778404be67b9dd660b8f49bb2799bb5d5415`, workflow 35151844720, was successful. Its source ZIP and 121-case report were inspected from artifact 10469761092. This is the actual baseline for the host ABI work, not an inferred state from earlier conversation text.
+
+The new full local, unfiltered run passed **125 cases, 0 failures**, using SDK **10.0.100**, Node **22.16.0**, Python **3.13.5**. It includes all existing cases plus four native stream Debug/Release × instruction/block configurations. Each reports **22 JavaScript** and **23 Python** lifecycle groups and **84 translated closed-cursor method bodies** for its multi-element fixture. The method count includes several constructed element types and is not 84 different algorithms.
+
+The four cases compare native streamed output with a CoreCLR consumer of the same input DLL, and each checks deterministic source re-emission. They cover exactly-once operation consumption, early closure, cancellation drain, pending cleanup retry, deferred acquisition, signal/reference retirement and native exception precedence. The standalone host sample additionally passed both targets and printed `managed enumerator disposed`, `30`, `0`.
+
+These results do not establish full BCL/CLI conformance, immediate cleanup of uncooperative sources, cross-loop/thread operation, native generator send/asend semantics, all object marshalling or a preemptive timeout. The final commit and CI artifact should be preserved with their report and notices; subsequent documentation-only changes do not alter the tested compiler implementation.
+
+The local Git tree of the complete tested source/test snapshot is `51d6d3c0c6bf5c26d7646ef391fd46cbe785591a`, exactly matching remote implementation commit `102cfb35e4f93b18e0c2f19895e23e0cd844c55a`. This verifies all file bytes and Git modes against the passed local implementation, independently of CI completion.

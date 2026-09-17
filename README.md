@@ -78,11 +78,34 @@ var source = SourceEmitter.Emit(analysis, SourceTarget.JavaScript,
 
 These types live in Transpiler.Core and Transpiler.Backends. RoslynFrontend and PortableCompilation supply source/reference-pack and optional library orchestration.
 
+## Native host streams
+
+The generated `stream(name, args, options)` adapter consumes exports declared as `IAsyncEnumerable<T>` directly from native host iteration. Its cursor and ValueTask ownership code are translated C#, with explicit reachability roots. Factory invocation is lazy and cleanup is single-consumption.
+
+```javascript
+import { stream } from "./kernel.mjs";
+for await (const value of stream("StreamKernel::Squares", [20])) {
+    console.log(value.toString());
+    if (value === 16n) break;
+}
+```
+
+```python
+from kernel import stream
+async with stream("StreamKernel::Squares", [20]) as values:
+    async for value in values:
+        print(value)
+        if value == 16:
+            break
+```
+
+Compile `samples/HostStreams.cs` with `--library --bcl portable` and the target of your choice. Complete commands and sample drivers are in the [host-stream contract](docs/host-streams.md). JavaScript early exit awaits return; Python early exit requires `async with`, `contextlib.aclosing`, or explicit `aclose`. Cancellation drains an outstanding move before disposal. A source that ignores cancellation can leave cleanup pending; the adapter reports this explicitly and supports safe close retry. No finalizer or background disposal is promised.
+
 ## Host invocation and lifetime
 
 Generated modules expose `invoke` and `invokeAsync` / `invoke_async` for supported public static exports. Task and ValueTask results, including source-backed operations, work with the async ABI. Use BigInt for JavaScript 64-bit integer values beyond Number's exact range. Root APIs are `retain`, `dereference` and `release`; output callbacks are `setOutput` / `set_output`.
 
-Native JS/Python async-generator marshalling of an exported IAsyncEnumerable is not implemented. Consume the stream inside an exported managed Task method when using the existing host ABI. Pump-step budgets do not interrupt an infinite managed call or cancel an underlying operation.
+Native async-iterator protocol adapters are implemented for exports declared exactly as IAsyncEnumerable<T>. Arbitrary concrete/object/Task-wrapped stream exports and general object serialization remain unsupported. `runtimeInfo`/`runtime_info` reports `activeStreams` and `streamPolicy`; pending-cleanup cursors remain active until real retirement. Pump-step budgets do not interrupt infinite managed code or a host hook that never resolves.
 
 Ordinary objects use host GC. The [logical collector](docs/logical-heap.md) manages only its own explicit payload/root domain; forced CLR collection, finalizers, resurrection and pinning are not no-op substitutes.
 
@@ -93,8 +116,8 @@ python3 tests/conformance.py
 dotnet "$CLI" capabilities --out artifacts/capabilities.json
 ```
 
-The implementation milestone passed **121 cases, 0 failures** in [CI run 35150624355](https://github.com/wieslawsoltes/Transpiler/actions/runs/35150624355). The gate contains **121 harness cases**: 100 ordinary/BCL Debug/Release console configurations, five negative fixtures, library/malformed-PE checks and 14 extended gates. Console configurations generate 200 target executions; the cross-emitter gate adds 96, and other graph/host/heap tests add further executions. One case may contain many assertions. These are not CLI coverage percentages. Observed results and exact environments are in [validation](docs/validation-summary.md).
+The expanded native-stream implementation passed the full **125-case local gate, 0 failures**, on SDK 10.0.100, Node 22.16.0 and Python 3.13.5. Its CI and artifact evidence are recorded in [validation](docs/validation-summary.md). The gate contains **125 harness cases**: 100 ordinary/BCL Debug/Release console configurations, five negative fixtures, library/malformed-PE checks and 18 extended gates. Console configurations generate 200 target executions; the cross-emitter gate adds 96. Four native-stream configurations add 22 JavaScript and 23 Python lifecycle scenario groups each, CoreCLR value comparison and deterministic emission. Other graph/host/heap tests add further executions. One case may contain many assertions. These are not CLI coverage percentages. Observed results and exact environments are in [validation](docs/validation-summary.md).
 
-[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
+[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
 
 The project does not yet provide full exception filters, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC, SSA or C++ output. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).

@@ -73,7 +73,7 @@ The completion bridge distinguishes a Canceled source from a Faulted source whos
 
 The existing `invokeAsync`/`invoke_async` ABI supports exported Task and ValueTask results, including source-backed results. JavaScript can provide a `yieldHost` callback to supply a pending result; Python can schedule completion through asyncio. The dedicated host test verifies one consumption and callback-state release.
 
-Direct marshalling of an exported IAsyncEnumerable into a native JavaScript async iterator or Python async generator is **not implemented**. A managed exported Task method can consume the stream and return a supported result. Host pump limits count steps; they do not interrupt an infinite managed call, and expiration does not cancel the underlying operation.
+Update 2026-09-17: the generated `stream` API now adapts exports declared as IAsyncEnumerable<T> to native JavaScript/Python async-iterator protocols. Python provides asynchronous context management and aclose; use a close scope for early break. Each managed cursor consumes one outstanding operation at a time and retains pending cleanup for a retry rather than disposing concurrently. See [host-stream ownership and cancellation](host-streams.md). This is a protocol adapter, not arbitrary object serialization or native generator send/asend support. Host pump limits count steps; they do not interrupt an infinite managed call or a nonresolving completion hook.
 
 ## Verification
 

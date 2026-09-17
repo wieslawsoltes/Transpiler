@@ -1,6 +1,6 @@
 # Testing and reproducibility
 
-Updated 2026-09-16 for source-backed ValueTask and async streams.
+Updated 2026-09-17 for native host-stream ownership and interoperability.
 
 ```bash
 dotnet build Transpiler.slnx -c Release
@@ -11,7 +11,7 @@ The package-free Python harness launches dotnet, Node and Python processes with 
 
 ## Current configured topology
 
-There are **121 harness cases**: 100 normal/BCL Debug/Release console configurations, five negative fixtures, library ABI, malformed PE, and 14 extended gates. Counts describe test groupings, not CLI support percentages.
+There are **125 harness cases**: 100 normal/BCL Debug/Release console configurations, five negative fixtures, library ABI, malformed PE, and 18 extended gates. Counts describe test groupings, not CLI support percentages.
 
 For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 100 configurations account for 200 generated console executions. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
@@ -36,3 +36,11 @@ Instruction/block comparison requires equal outputs and fewer dispatch cases/sou
 Read [validation](validation-summary.md) for observed runs and exact environments. Preserve complete reports, source-archive commit identity, toolchain inputs and notices together. Do not count a configured or filtered suite as passed, or normalize output to hide backend differences. An intentional profile difference needs a documented dedicated test.
 
 Remaining qualification includes full exceptional/byref/type verification, filters, concurrency/context/timer protocols, general host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
+
+## Native host-stream gate
+
+`host_stream_batch.py` compiles a library with ordinary async iterators and instrumented IValueTaskSource probes. Debug/Release × instruction/block produces four harness cases. Each executes 22 JavaScript and 23 Python lifecycle groups, a native host value consumer compared with CoreCLR, deterministic re-emission and cursor-origin checks. The same library assembly is the input for every consumer in a configuration.
+
+Probe counters independently track issuing and consuming move/disposal. Disposal overlapping a move or issued twice fails. Tests cover ignored cancellation, external completion, pending disposal and close retry, native abort/asyncio cancellation, empty/faulting acquisition, Current failure, single-use ownership and terminal reference/listener cleanup. Python tests both async-with and contextlib.aclosing early exit. JavaScript and Python exception-precedence expectations are tested separately, not normalized into fake equivalence.
+
+The full local 125-case suite passed under SDK 10.0.100, Node 22.16.0 and Python 3.13.5. Focused host-stream success is also recorded separately and is not substituted for that full result. See the validation ledger for CI/artifact identity and scope. Abandoned or forever-pending resources are not certified as reclaimable by an async finalizer.
