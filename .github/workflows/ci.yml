@@ -7,6 +7,37 @@ on:
 permissions:
   contents: read
 jobs:
+  clock-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build
+        run: dotnet build Transpiler.slnx -c Release
+      - name: Native clock lifecycle invariants
+        run: |
+          node tests/timers/clock_unit.mjs
+          python tests/timers/clock_unit.py
+      - name: Compiled timer ownership and async cleanup
+        env:
+          TRANSPILER_TEST_FILTER: 'host/timers/'
+          TRANSPILER_TEST_WORKERS: '2'
+        run: python tests/conformance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transpiler-host-clock-regressions
+          path: artifacts/conformance/
+          if-no-files-found: warn
   conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 30

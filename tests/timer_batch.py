@@ -16,7 +16,7 @@ def units(h, runtime, extension):
     result = h.run(runtime, h.ROOT / ('tests/timers/clock_unit.' + extension))
     detail = json.loads(result.stdout.splitlines()[-1])
     assert detail['cases'] == detail['passed'] == 13, result.stdout
-    return detail
+    return dict(clockChecks=detail['cases'], host=extension)
 
 
 def lifecycle(h, dispatch):

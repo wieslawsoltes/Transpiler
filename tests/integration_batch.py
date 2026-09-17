@@ -111,7 +111,10 @@ def boundaries(h):
         'finalizers':'System.GC.WaitForPendingFinalizers();',
         'resurrection':'var w=new System.WeakReference<object>(new object(),true);',
         'thread-pool':'System.Threading.Tasks.Task.Run(()=>42).GetAwaiter().GetResult();',
-        'delay':'System.Threading.Tasks.Task.Delay(1).GetAwaiter().GetResult();',
+        # Int32 Delay is now positive coverage; adjacent overloads still need capabilities.
+        'delay-timespan':'System.Threading.Tasks.Task.Delay(System.TimeSpan.FromMilliseconds(1)).GetAwaiter().GetResult();',
+        'public-timer':'using var timer=new System.Threading.Timer(_=>{},null,1,1);',
+        'timed-wait':'System.Threading.Tasks.Task.CompletedTask.WaitAsync(System.TimeSpan.FromMilliseconds(1));',
         'unsupported-continuation':'System.Threading.Tasks.Task.CompletedTask.ContinueWith(t=>42);',
         'reflection':'System.Console.WriteLine(typeof(Program).Name);',
     }
@@ -119,8 +122,9 @@ def boundaries(h):
         p=d/(name+'.cs');p.write_text('public static class Program {public static void Main(){'+statement+'}}')
         for target in ['js','py']:
             output=d/(name+'.'+target)
+            output.unlink(missing_ok=True)
             result=h.cli('compile',p,'--bcl','portable','--target',target,'--out',output,expected=None)
-            assert result.returncode == 1 and not output.exists() and 'TR' in result.stderr, result.stderr
+            assert result.returncode == 1 and not output.exists() and 'TR' in result.stderr, f'{name}/{target}: exit={result.returncode}\n{result.stdout}\n{result.stderr}'
     return {'rejectedCategories':len(samples),'targetChecks':len(samples)*2}
 
 
