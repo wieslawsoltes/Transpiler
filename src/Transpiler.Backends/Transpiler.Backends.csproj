@@ -17,6 +17,8 @@
     <EmbeddedResource Include="Runtime/arrays.py" LogicalName="Transpiler.Runtime.Python.Arrays" />
     <EmbeddedResource Include="Runtime/streams.mjs" LogicalName="Transpiler.Runtime.JavaScript.Streams" />
     <EmbeddedResource Include="Runtime/streams.py" LogicalName="Transpiler.Runtime.Python.Streams" />
+    <EmbeddedResource Include="Runtime/search.mjs" LogicalName="Transpiler.Runtime.JavaScript.Search" />
+    <EmbeddedResource Include="Runtime/search.py" LogicalName="Transpiler.Runtime.Python.Search" />
     <EmbeddedResource Include="Runtime/NOTICE.txt" LogicalName="Transpiler.Runtime.DotNetNotice" />
   </ItemGroup>
 </Project>

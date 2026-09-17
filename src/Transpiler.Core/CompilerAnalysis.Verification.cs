@@ -28,7 +28,8 @@ public static partial class CompilerAnalysis
         {
             if (!instructions.ContainsKey(c.TryStart) || !Boundary(c.TryEnd) || !Boundary(c.HandlerEnd) || c.TryEnd <= c.TryStart || c.HandlerEnd <= c.HandlerStart)
                 Fail("Invalid exception region boundaries.", c.TryStart);
-            Merge(c.HandlerStart, c.Kind == "Catch" ? ["o"] : []);
+            Merge(c.HandlerStart, c.Kind is "Catch" or "Filter" ? ["o"] : []);
+            if (c.Kind == "Filter") Merge(c.FilterStart, ["o"]);
         }
         while (work.TryDequeue(out var pc))
         {
@@ -118,11 +119,17 @@ public static partial class CompilerAnalysis
             else if (op is "unbox" or "unbox.any") { Expect("o"); Push(op == "unbox" ? (string)i.Operand! + "&" : Kind((string)i.Operand!)); }
             else if (op is "castclass" or "isinst") { Expect("o"); Push("o"); }
             else if (op == "throw") { Expect("o"); s.Clear(); }
+            else if (op == "endfilter")
+            {
+                Expect("i4");
+                if (s.Count != 0 || !method.Exceptions.Any(c => c.Kind == "Filter" && c.FilterStart <= pc && pc < c.HandlerStart))
+                    Fail("endfilter requires one Int32 result inside a filter region.", pc);
+            }
             else if (op == "rethrow" || op == "endfinally")
             {
                 if (s.Count != 0) Fail("Exception terminator requires empty stack.", pc);
                 if (!method.Exceptions.Any(c => c.HandlerStart <= pc && pc < c.HandlerEnd &&
-                    (op == "rethrow" ? c.Kind == "Catch" : c.Kind is "Finally" or "Fault"))) Fail("Exception terminator outside its handler.", pc);
+                    (op == "rethrow" ? c.Kind is "Catch" or "Filter" : c.Kind is "Finally" or "Fault"))) Fail("Exception terminator outside its handler.", pc);
             }
             else if (op == "leave") s.Clear();
             else if (op == "ret")
@@ -145,7 +152,7 @@ public static partial class CompilerAnalysis
                 else if (!compare) Push(left);
             }
             if (s.Count > method.MaxStack) Fail("Declared maxstack exceeded.", pc);
-            if (op is "ret" or "throw" or "rethrow" or "endfinally") continue;
+            if (op is "ret" or "throw" or "rethrow" or "endfinally" or "endfilter") continue;
             if (op is "br" or "leave") { Merge((int)i.Operand!, s.ToArray()); continue; }
             if (op == "switch") foreach (var target in (int[])i.Operand!) Merge(target, s.ToArray());
             else if (i.Code.FlowControl == FlowControl.Cond_Branch) Merge((int)i.Operand!, s.ToArray());

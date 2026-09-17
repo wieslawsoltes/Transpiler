@@ -42,13 +42,20 @@ public static class CilControlFlow
         var regions = new HashSet<Region>();
         foreach (var clause in method.Exceptions)
         {
-            if (clause.Kind is not ("Catch" or "Finally" or "Fault")) Fail("Unsupported exception region in this control-flow profile.", clause.TryStart);
+            if (clause.Kind is not ("Catch" or "Finally" or "Fault" or "Filter")) Fail("Unsupported exception region in this control-flow profile.", clause.TryStart);
             Boundary(clause.TryStart); Boundary(clause.TryEnd, true); Boundary(clause.HandlerStart); Boundary(clause.HandlerEnd, true);
             if (clause.TryStart >= clause.TryEnd || clause.HandlerStart >= clause.HandlerEnd ||
                 clause.TryStart < clause.HandlerEnd && clause.HandlerStart < clause.TryEnd)
                 Fail("Empty or overlapping try/handler ranges in one clause.", clause.TryStart);
             regions.Add(new("Try", clause.TryStart, clause.TryEnd));
-            regions.Add(new(clause.Kind, clause.HandlerStart, clause.HandlerEnd));
+            regions.Add(new(clause.Kind == "Filter" ? "Catch" : clause.Kind, clause.HandlerStart, clause.HandlerEnd));
+            if (clause.Kind == "Filter")
+            {
+                Boundary(clause.FilterStart);
+                if (clause.FilterStart >= clause.HandlerStart || clause.TryStart < clause.HandlerStart && clause.FilterStart < clause.TryEnd)
+                    Fail("Filter overlaps its protected range or is empty.", clause.FilterStart);
+                regions.Add(new("Filter", clause.FilterStart, clause.HandlerStart));
+            }
         }
         var orderedRegions = regions.OrderBy(r => r.Start).ThenByDescending(r => r.End).ThenBy(r => r.Kind, StringComparer.Ordinal).ToArray();
         for (int a = 0; a < orderedRegions.Length; a++)
@@ -77,10 +84,10 @@ public static class CilControlFlow
             var removed = source.Except(destination).ToArray(); var entered = destination.Except(source).ToArray();
             if (instruction.Op == "leave")
             {
-                if (removed.Any(r => r.Kind is "Finally" or "Fault")) Fail("leave cannot exit a finally/fault handler.", instruction.Offset);
+                if (removed.Any(r => r.Kind is "Finally" or "Fault" or "Filter")) Fail("leave cannot exit a finally/fault handler.", instruction.Offset);
                 foreach (var r in entered)
                 {
-                    var associatedCatch = r.Kind == "Try" && method.Exceptions.Any(c => c.Kind == "Catch" &&
+                    var associatedCatch = r.Kind == "Try" && method.Exceptions.Any(c => c.Kind is "Catch" or "Filter" &&
                         c.HandlerStart <= instruction.Offset && instruction.Offset < c.HandlerEnd && c.TryStart == r.Start && c.TryEnd == r.End);
                     if (!associatedCatch) Fail("leave enters a new protected region rather than an enclosing scope or associated try.", instruction.Offset);
                 }
@@ -97,7 +104,9 @@ public static class CilControlFlow
         {
             var targets = Targets(i);
             foreach (var target in targets) { Transfer(i, target, false); leaders.Add(target); }
-            var terminator = i.Op is "ret" or "throw" or "rethrow" or "endfinally";
+            var terminator = i.Op is "ret" or "throw" or "rethrow" or "endfinally" or "endfilter";
+            if (i.Op == "endfilter" && !At(i.Offset).OrderBy(r => r.End-r.Start).Take(1).Any(r => r.Kind == "Filter"))
+                Fail("endfilter must terminate the active filter region.", i.Offset);
             if (i.Op == "ret" && At(i.Offset).Length != 0) Fail("ret cannot leave a protected region.", i.Offset);
             if (i.Op == "endfinally" && !At(i.Offset).OrderBy(r => r.End-r.Start).Take(1).Any(r => r.Kind is "Finally" or "Fault"))
                 Fail("endfinally must terminate the active finally/fault region.", i.Offset);
@@ -120,13 +129,14 @@ public static class CilControlFlow
                 foreach (var c in method.Exceptions.Where(c => c.Kind == "Finally" && c.TryStart <= last.Offset && last.Offset < c.TryEnd &&
                     !((int)last.Operand! >= c.TryStart && (int)last.Operand! < c.TryEnd)).OrderBy(c => c.TryEnd-c.TryStart))
                     edges.Add(new(c.HandlerStart, "finally-unwind"));
+            else if (last.Op == "endfilter") edges.Add(new(null, "filter-result"));
             else if (last.Op == "endfinally") edges.Add(new(null, "resume-continuation"));
             else if (last.Op is "throw" or "rethrow") edges.Add(new(null, "propagate-exception"));
             else if (last.Op != "ret" && last.Code.FlowControl != FlowControl.Branch) edges.Add(new(last.NextOffset, "fallthrough"));
             for (int clauseIndex = 0; clauseIndex < method.Exceptions.Length; clauseIndex++)
             {
                 var clause = method.Exceptions[clauseIndex];
-                if (clause.TryStart < finish && start < clause.TryEnd) edges.Add(new(clause.HandlerStart, "exception-search", clauseIndex));
+                if (clause.TryStart < finish && start < clause.TryEnd) edges.Add(new(clause.Kind == "Filter" ? clause.FilterStart : clause.HandlerStart, "exception-search", clauseIndex));
             }
             blocks.Add(new(start, finish, body.Select(i => i.Offset).ToArray(), edges.Distinct().ToArray()));
         }

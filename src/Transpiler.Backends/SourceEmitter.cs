@@ -27,6 +27,7 @@ public static class SourceEmitter
         options ??= new();
         if (!Enum.IsDefined(options.Dispatch)) throw new ArgumentOutOfRangeException(nameof(options));
         var blocks = options.Dispatch == DispatchMode.BasicBlock;
+        var search = analysis.Methods.Any(m => m.Method.Exceptions.Any(c => c.Kind == "Filter"));
         var python = target == SourceTarget.Python;
         var metadata = new BackendMetadata(analysis);
         var json = JsonSerializer.Serialize(metadata.Build(), JsonOptions);
@@ -43,7 +44,7 @@ public static class SourceEmitter
             foreach (var line in noticeReader.ReadToEnd().Split('\n')) output.AppendLine((python ? "# " : "// ") + line);
         }
         output.AppendLine(reader.ReadToEnd());
-        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions", ".Arrays", ".Streams" })
+        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions", ".Arrays", ".Streams", ".Search" })
         {
             using var layerStream = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + layer)
                 ?? throw new InvalidOperationException($"Missing embedded runtime layer: {layer}");
@@ -55,18 +56,24 @@ public static class SourceEmitter
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = StreamRuntime(metadata)");
+            output.AppendLine("R = " + (search ? "SearchRuntime" : "StreamRuntime") + "(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new StreamRuntime(metadata);");
+            output.AppendLine("const R = new " + (search ? "SearchRuntime" : "StreamRuntime") + "(metadata);");
         }
         var count = 0; var cases = 0;
         foreach (var method in analysis.Methods)
         {
-            EmitMethod(output, method, metadata, analysis.Assembly, python, blocks);
+            if (search)
+            {
+                var body = new StringBuilder();
+                EmitMethod(body, method, metadata, analysis.Assembly, python, blocks, true);
+                output.AppendLine(ExceptionFrameEmitter.Wrap(body.ToString(), python));
+            }
+            else EmitMethod(output, method, metadata, analysis.Assembly, python, blocks, false);
             cases += blocks ? (method.ControlFlow ?? CilControlFlow.Build(method.Method)).Blocks.Count(b => method.StackBefore.ContainsKey(b.Start)) : method.StackBefore.Count;
             count += method.StackBefore.Count;
         }
@@ -111,7 +118,7 @@ public static class SourceEmitter
         return Convert.ToString(value, CultureInfo.InvariantCulture)!;
     }
 
-    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python, bool blocks)
+    private static void EmitMethod(StringBuilder output, MethodAnalysis analysis, BackendMetadata metadata, AssemblyModel image, bool python, bool blocks, bool search)
     {
         var method = analysis.Method;
         var leaders = blocks ? (analysis.ControlFlow ?? CilControlFlow.Build(method)).Blocks.Select(b => b.Start).ToHashSet() : [];
@@ -143,6 +150,8 @@ public static class SourceEmitter
             // Keep the precise faulting IL offset even when several instructions share a dispatch case.
             // No evaluation-stack, storage-copy, null/bounds-check, or type-initialization effects are elided.
             if (blocks) Line("pc = " + i.Offset.ToString(CultureInfo.InvariantCulture));
+            if (search)
+                Line(python ? $"if not filtering: flow.pc = {i.Offset}" : $"if (!filtering) flow.pc = {i.Offset}");
             var terminal = false;
             var op = i.Op;
             if (op == "nop") Line(python ? "pass" : "void 0");
@@ -238,6 +247,7 @@ public static class SourceEmitter
                 Jump(Choice(condition, "z[x]", i.NextOffset.ToString(CultureInfo.InvariantCulture))); terminal = true;
             }
             else if (op == "leave") { Jump($"flow.leave(pc, {i.Operand}, s)"); terminal = true; }
+            else if (op == "endfilter") { Line("return s.pop()"); terminal = true; }
             else if (op == "endfinally") { Jump("flow.resume(s)"); terminal = true; }
             else if (op == "throw") { Line("R.raise_value(s.pop())"); terminal = true; }
             else if (op == "rethrow") { Line("flow.rethrow(pc)"); terminal = true; }

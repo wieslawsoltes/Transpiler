@@ -18,7 +18,7 @@ public static partial class CompilerAnalysis
         "ldelem.i1 ldelem.u1 ldelem.i2 ldelem.u2 ldelem.i4 ldelem.u4 ldelem.i8 ldelem.r4 ldelem.r8 ldelem.ref " +
         "stelem.i1 stelem.i2 stelem.i4 stelem.i8 stelem.r4 stelem.r8 stelem.ref " +
         "ldind.i1 ldind.u1 ldind.i2 ldind.u2 ldind.i4 ldind.u4 ldind.i8 ldind.r4 ldind.r8 ldind.ref stind.i1 stind.i2 stind.i4 stind.i8 stind.r4 stind.r8 stind.ref " +
-        "ldobj stobj cpobj initobj constrained. box unbox unbox.any castclass isinst throw rethrow leave endfinally").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        "ldobj stobj cpobj initobj constrained. box unbox unbox.any castclass isinst throw rethrow leave endfinally endfilter").Split(' ', StringSplitOptions.RemoveEmptyEntries));
     private static readonly HashSet<string> Conversions = new(BuildConversions());
     public static IReadOnlyCollection<string> SupportedOpcodes => Supported.Concat(Conversions).Order().ToArray();
     private static IEnumerable<string> BuildConversions()
@@ -71,7 +71,7 @@ public static partial class CompilerAnalysis
             EnqueueType(method.Reference.Type);
             foreach (var clause in method.Exceptions)
             {
-                if (clause.Kind is not ("Catch" or "Finally" or "Fault")) Error("TR2010", $"Exception clause '{clause.Kind}' is not implemented; filters need two-pass search.", clause.FilterStart);
+                if (clause.Kind is not ("Catch" or "Finally" or "Fault" or "Filter")) Error("TR2010", $"Exception clause '{clause.Kind}' is outside the supported CLI handler kinds.", clause.FilterStart);
                 if (clause.CatchType is not null) Type(clause.CatchType, clause.HandlerStart);
             }
             foreach (var i in method.Instructions)
