@@ -9,7 +9,7 @@ permissions:
 jobs:
   conformance:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -26,6 +26,7 @@ jobs:
       - name: Differential conformance
         env:
           TRANSPILER_TEST_FILTER: ''
+          TRANSPILER_TEST_WORKERS: '2'
         run: python tests/conformance.py
       - name: Preserve binary redistribution notices
         run: |

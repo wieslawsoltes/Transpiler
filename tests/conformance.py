@@ -4,6 +4,9 @@ Every child has a timeout. Negative cases must fail compilation without creating
 Only the Python standard library is required. Run after `dotnet build Transpiler.slnx -c Release`.
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from threading import Lock
 import hashlib
 import json
 import os
@@ -18,6 +21,8 @@ OUT = ROOT / 'artifacts' / 'conformance'
 CLI = ROOT / 'src/Transpiler.Cli/bin/Release/net10.0/Transpiler.Cli.dll'
 ENV = dict(os.environ, DOTNET_SYSTEM_GLOBALIZATION_INVARIANT='1', LC_ALL='C.UTF-8', PYTHONUTF8='1')
 RESULTS: list[dict] = []
+CASES: list[tuple[str, Callable[[], dict | None]]] = []
+PRINT_LOCK = Lock()
 
 
 def run(*args: object, expected: int | None = 0) -> subprocess.CompletedProcess:
@@ -32,16 +37,22 @@ def cli(*args: object, expected: int | None = 0) -> subprocess.CompletedProcess:
     return run('dotnet', CLI, *args, expected=expected)
 
 
-def record(name: str, action) -> None:
-    if os.environ.get('TRANSPILER_TEST_FILTER') and os.environ['TRANSPILER_TEST_FILTER'] not in name: return
+def record(name: str, action: Callable[[], dict | None]) -> None:
+    if any(existing == name for existing, _ in CASES): raise ValueError('Duplicate test case: ' + name)
+    CASES.append((name, action))
+
+
+def execute(case: tuple[str, Callable[[], dict | None]]) -> dict:
+    name, action = case
     start = time.perf_counter()
     try:
         detail = action() or {}
-        RESULTS.append(dict(name=name, passed=True, seconds=round(time.perf_counter() - start, 4), **detail))
-        print('PASS', name, flush=True)
+        result = dict(name=name, passed=True, seconds=round(time.perf_counter() - start, 4), **detail)
+        with PRINT_LOCK: print('PASS', name, flush=True)
     except Exception as error:
-        RESULTS.append(dict(name=name, passed=False, seconds=round(time.perf_counter() - start, 4), error=str(error)))
-        print('FAIL', name, str(error), flush=True)
+        result = dict(name=name, passed=False, seconds=round(time.perf_counter() - start, 4), error=str(error))
+        with PRINT_LOCK: print('FAIL', name, str(error), flush=True)
+    return result
 
 
 def differential(source: Path, debug: bool, bcl: bool = False) -> dict:
@@ -110,6 +121,8 @@ def malformed() -> dict:
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / 'report.json').unlink(missing_ok=True)
+    CASES.clear(); RESULTS.clear()
     if not CLI.exists(): raise SystemExit('Build the solution before running conformance tests.')
     for source in sorted((ROOT / 'tests/programs').glob('*.cs')) + [ROOT / 'samples/Hello.cs']:
         for debug in (False, True):
@@ -123,8 +136,21 @@ def main() -> int:
     record('metadata/malformed-pe', malformed)
     import extended
     extended.register(sys.modules[__name__])
+    selected_filter = os.environ.get('TRANSPILER_TEST_FILTER', '')
+    selected = [case for case in CASES if selected_filter in case[0]]
+    if not selected:
+        print('No conformance cases selected; refusing an empty success.', file=sys.stderr)
+        return 2
+    try: workers = int(os.environ.get('TRANSPILER_TEST_WORKERS', '1'))
+    except ValueError: raise SystemExit('TRANSPILER_TEST_WORKERS must be an integer from 1 through 8.')
+    if not 1 <= workers <= 8: raise SystemExit('TRANSPILER_TEST_WORKERS must be from 1 through 8.')
+    # Each registered case owns a distinct artifact directory. Results retain registration order,
+    # irrespective of completion order, and no case is silently dropped after another fails.
+    with ThreadPoolExecutor(max_workers=min(workers, len(selected))) as executor:
+        RESULTS.extend(executor.map(execute, selected))
     cli('capabilities', '--out', OUT / 'capabilities.json')
-    report = dict(schema=1, platform=platform.platform(), python=platform.python_version(),
+    report = dict(schema=1, workers=workers, filter=selected_filter, registeredCases=len(CASES), selectedCases=len(selected),
+                  complete=not selected_filter and len(selected)==len(CASES), platform=platform.platform(), python=platform.python_version(),
                   node=run('node', '--version').stdout.strip(), dotnet=run('dotnet', '--version').stdout.strip(),
                   passed=sum(r['passed'] for r in RESULTS), failed=sum(not r['passed'] for r in RESULTS), results=RESULTS)
     (OUT / 'report.json').write_text(json.dumps(report, indent=2, ensure_ascii=True) + '\n', encoding='utf-8')

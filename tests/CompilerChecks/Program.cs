@@ -1,5 +1,9 @@
 using Transpiler.Core;
 
+if (args.Length == 2 && args[0] == "--emit-fault") { FaultFixture.Write(args[1]); return; }
+if (args.Length == 1 && args[0] == "--identity") { IdentityChecks.Run(); return; }
+if (args.Length == 1 && args[0] == "--safety") { SafetyChecks.Run(); return; }
+
 if (args.Length == 1 && args[0] == "--flow") { FlowChecks.Run(); return; }
 
 // No external test packages: exercise hand-authored normalized CIL shapes unreachable from safe C# source.
