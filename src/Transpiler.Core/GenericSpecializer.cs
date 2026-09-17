@@ -147,6 +147,16 @@ public static partial class GenericSpecializer
                 m.Reference.Name != ".cctor" && m.Reference.GenericArity == 0 && input.FindType(m.Reference.Type)?.GenericArity == 0).ToArray();
         var exports = roots.Select(m => Bind(m.Reference)).ToArray();
         var hostRoots = new HashSet<string>(StringComparer.Ordinal);
+        // Native host streams call a closed managed cursor; these calls are not in application IL.
+        if (typeTemplates.ContainsKey(StreamContracts.Cursor))
+            foreach (var export in exports)
+                if (StreamContracts.Element(export.ReturnType) is { } element)
+                {
+                    var cursor = CloseType(StreamContracts.Cursor + "<" + element + ">");
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == StreamContracts.Cursor &&
+                        StreamContracts.Members.Contains(m.Reference.Name)))
+                        hostRoots.Add(Bind(member.Reference with { Type = cursor }).Key);
+                }
         var changed = true;
         while (changed)
         {

@@ -134,6 +134,6 @@ internal sealed class BackendMetadata
                     completed = Id(completed.Token), pump = Id(pump.Token), awaiterType = method.Reference.ReturnType, resultType = result.Reference.ReturnType };
         }
         return new { schema = AssemblyModel.SchemaVersion, profile = "portable-mvp", assembly = image.Name,
-            types, fields, methods, exports, asyncBindings, arrayEnumerators, entry = image.EntryPoint == 0 ? null : Id(image.EntryPoint) };
+            types, fields, methods, exports, asyncBindings, streamBindings = StreamMetadata.Build(_analysis), arrayEnumerators, entry = image.EntryPoint == 0 ? null : Id(image.EntryPoint) };
     }
 }

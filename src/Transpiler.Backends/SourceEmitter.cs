@@ -43,7 +43,7 @@ public static class SourceEmitter
             foreach (var line in noticeReader.ReadToEnd().Split('\n')) output.AppendLine((python ? "# " : "// ") + line);
         }
         output.AppendLine(reader.ReadToEnd());
-        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions", ".Arrays" })
+        foreach (var layer in new[] { ".Managed", ".Services", ".Values", ".Numeric", ".Exceptions", ".Arrays", ".Streams" })
         {
             using var layerStream = typeof(SourceEmitter).Assembly.GetManifestResourceStream(resource + layer)
                 ?? throw new InvalidOperationException($"Missing embedded runtime layer: {layer}");
@@ -55,13 +55,13 @@ public static class SourceEmitter
             output.AppendLine("def retain(value): return R.retain(value)\ndef dereference(handle): return R.dereference_root(handle)\ndef release(handle): return R.release(handle)\ndef runtime_info(): return R.runtime_info()");
             output.AppendLine("import json as _json");
             output.AppendLine("metadata = _json.loads(" + Quote(json) + ")");
-            output.AppendLine("R = ArrayRuntime(metadata)");
+            output.AppendLine("R = StreamRuntime(metadata)");
         }
         else
         {
             output.AppendLine("export function retain(value) { return R.retain(value); }\nexport function dereference(handle) { return R.dereference_root(handle); }\nexport function release(handle) { return R.release(handle); }\nexport function runtimeInfo() { return R.runtime_info(); }");
             output.AppendLine("const metadata = " + json + ";");
-            output.AppendLine("const R = new ArrayRuntime(metadata);");
+            output.AppendLine("const R = new StreamRuntime(metadata);");
         }
         var count = 0; var cases = 0;
         foreach (var method in analysis.Methods)
@@ -76,6 +76,7 @@ public static class SourceEmitter
         {
             output.AppendLine("\ndef invoke(name, args=()):\n    return R.invoke_export(name, list(args))");
             output.AppendLine("\nasync def invoke_async(name, args=(), max_steps=100000):\n    return await R.await_export(name, list(args), max_steps)");
+            output.AppendLine("\ndef stream(name, args=(), *, max_steps=100000, cleanup_steps=None, yield_host=None):\n    return R.stream(name, args, max_steps=max_steps, cleanup_steps=cleanup_steps, yield_host=yield_host)");
             output.AppendLine("\ndef main(args=()):\n    return R.main(list(args))");
             output.AppendLine("\ndef set_output(writer):\n    R.write = writer");
             output.AppendLine("\nif __name__ == '__main__' and metadata['entry'] is not None:\n    try:\n        sys.exit(main(sys.argv[1:]))\n    except CliError as error:\n        sys.stderr.write(str(error) + '\\n')\n        sys.exit(1)");
@@ -84,6 +85,7 @@ public static class SourceEmitter
         {
             output.AppendLine("export function invoke(name, args = []) { return R.invoke_export(name, args); }");
             output.AppendLine("export async function invokeAsync(name, args = [], options = {}) { return await R.await_export(name, args, options); }");
+            output.AppendLine("export function stream(name, args = [], options = {}) { return R.stream(name, args, options); }");
             output.AppendLine("export function main(args = []) { return R.main(args); }");
             output.AppendLine("export function setOutput(writer) { if (typeof writer !== 'function') throw new TypeError('writer must be a function'); R.write = writer; }");
             output.AppendLine("export const manifest = Object.freeze({ assembly: metadata.assembly, profile: metadata.profile, exports: Object.keys(metadata.exports) });");
