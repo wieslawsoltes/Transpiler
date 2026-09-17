@@ -111,10 +111,10 @@ def boundaries(h):
         'finalizers':'System.GC.WaitForPendingFinalizers();',
         'resurrection':'var w=new System.WeakReference<object>(new object(),true);',
         'thread-pool':'System.Threading.Tasks.Task.Run(()=>42).GetAwaiter().GetResult();',
-        # Int32 Delay is now positive coverage; adjacent overloads still need capabilities.
-        'delay-timespan':'System.Threading.Tasks.Task.Delay(System.TimeSpan.FromMilliseconds(1)).GetAwaiter().GetResult();',
-        'public-timer':'using var timer=new System.Threading.Timer(_=>{},null,1,1);',
-        'timed-wait':'System.Threading.Tasks.Task.CompletedTask.WaitAsync(System.TimeSpan.FromMilliseconds(1));',
+        # Timer/TimeSpan/provider timing APIs are positive; parsing/calendar/WaitHandle remain separate.
+        'duration-parse':'System.TimeSpan.Parse("00:00:01");',
+        'timer-wait-handle':'using var timer=new System.Threading.Timer(_=>{}); timer.Dispose((System.Threading.WaitHandle)null!);',
+        'provider-calendar':'System.TimeProvider.System.GetUtcNow();',
         'unsupported-continuation':'System.Threading.Tasks.Task.CompletedTask.ContinueWith(t=>42);',
         'reflection':'System.Console.WriteLine(typeof(Program).Name);',
     }

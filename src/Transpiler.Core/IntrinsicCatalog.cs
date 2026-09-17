@@ -3,7 +3,7 @@ namespace Transpiler.Core;
 /// <summary>Exact managed signatures accepted by the portable runtime. No name-only BCL fallback.</summary>
 public static class IntrinsicCatalog
 {
-    public static readonly string[] ExceptionTypes = ["System.Exception", "System.SystemException", "System.ArithmeticException",
+    public static readonly string[] ExceptionTypes = ["System.Exception", "System.SystemException", "System.TimeoutException", "System.ArithmeticException",
         "System.DivideByZeroException", "System.OverflowException", "System.NullReferenceException", "System.IndexOutOfRangeException",
         "System.ArrayTypeMismatchException", "System.InvalidCastException", "System.ArgumentException", "System.ArgumentOutOfRangeException",
         "System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException", "System.ArgumentNullException", "System.ObjectDisposedException", "System.TypeLoadException", "System.InvalidOperationException", "System.NotSupportedException", "System.TypeInitializationException"];

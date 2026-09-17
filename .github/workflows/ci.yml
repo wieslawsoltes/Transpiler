@@ -32,6 +32,13 @@ jobs:
           TRANSPILER_TEST_FILTER: 'host/timers/'
           TRANSPILER_TEST_WORKERS: '2'
         run: python tests/conformance.py
+      - name: Duration, provider, timeout and periodic timer contracts
+        env:
+          TRANSPILER_TEST_FILTER: 'host/time-services/'
+          TRANSPILER_TEST_WORKERS: '2'
+        run: |
+          cp artifacts/conformance/report.json artifacts/conformance/clock-report.json
+          python tests/conformance.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

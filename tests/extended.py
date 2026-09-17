@@ -15,3 +15,5 @@ def register(h):
     native_batch.register(h)
     import timer_batch
     timer_batch.register(h)
+    import time_batch
+    time_batch.register(h)

@@ -74,7 +74,7 @@ async def main():
     s = HostClockService(); s.install(BrokenClock()); raises(lambda: s.create(1, object()), 'arm failed'); assert s.info()['activeTimers'] == 0
     passed('failed-arm-releases-record')
     s, _ = setup()
-    for n in (-2, 2147483648, 0.5, float('nan'), True): raises(lambda n=n: s.create(n, object()))
+    for n in (-2, 4294967295, 0.5, float('nan'), True): raises(lambda n=n: s.create(n, object()))
     s.next_id = 2147483648; raises(lambda: s.create(1, object()), 'budget'); assert s.info()['activeTimers'] == 0
     passed('range-and-handle-budget')
     s, _ = setup(); handle = s.create(10, object()); version = s.version

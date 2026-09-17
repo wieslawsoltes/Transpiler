@@ -53,7 +53,7 @@ class HostClockService:
 
     @staticmethod
     def delay(value):
-        if type(value) is not int or value < -1 or value > 2147483647:
+        if type(value) is not int or value < -1 or value > 4294967294:
             raise ValueError('Invalid timer delay')
 
     def get(self, handle):
@@ -176,7 +176,7 @@ class HostClockService:
             self.waiters.discard(waiter)
 
     def info(self):
-        return dict(clock='host-clock-v1', activeTimers=len(self.timers), readyTimers=len(self.notifications),
+        return dict(clock='host-clock-v2', activeTimers=len(self.timers), readyTimers=len(self.notifications),
                     hostWaiters=len(self.waiters), idlePolicy='timer-notification-or-explicit-yield')
 
 
@@ -190,6 +190,7 @@ class CliWeak(CliObject):
 class HostedRuntime(ManagedRuntime):
     def __init__(self, metadata, write=None):
         super().__init__(metadata, write)
+        self.parents['System.TimeoutException'] = 'System.SystemException'
         self.parents['System.ObjectDisposedException'] = 'System.InvalidOperationException'
         self._identity_hashes = _weakref.WeakKeyDictionary()
         self._next_hash = 1
@@ -206,6 +207,9 @@ class HostedRuntime(ManagedRuntime):
 
     def external(self, method, args):
         op = method['intrinsic']
+        if op == 'clock.now': return float(self.clock.now())
+        if op == 'clock.create-wide': return self.clock.create(args[0], self.nonnull(args[1]))
+        if op == 'clock.change-wide': return self.clock.change(args[0], args[1])
         if op == 'clock.create': return self.clock.create(args[0], self.nonnull(args[1]))
         if op == 'clock.change': return self.clock.change(args[0], args[1])
         if op == 'clock.fired': return int(self.clock.get(args[0])['everQueued'])

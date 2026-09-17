@@ -10,11 +10,12 @@ public static class HostClockContracts
             method.Instance || method.GenericArity != 0 || method.GenericArguments.Length != 0) return null;
         return (method.Name, method.ReturnType, string.Join(",", method.Parameters)) switch
         {
-            ("Create", "System.Int32", "System.Int32,System.Action") => "clock.create",
-            ("Change", "System.Void", "System.Int32,System.Int32") => "clock.change",
+            ("Create", "System.Int32", "System.Int64,System.Action") => "clock.create-wide",
+            ("Change", "System.Void", "System.Int32,System.Int64") => "clock.change-wide",
             ("HasFired", "System.Boolean", "System.Int32") => "clock.fired",
             ("Destroy", "System.Void", "System.Int32") => "clock.destroy",
             ("TakeReady", "System.Action", "") => "clock.take",
+            ("Now", "System.Double", "") => "clock.now",
             ("Signal", "System.Void", "") => "clock.signal",
             _ => null
         };

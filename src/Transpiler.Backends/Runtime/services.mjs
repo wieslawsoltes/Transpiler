@@ -12,7 +12,7 @@ class HostClockService {
                 if (typeof globalThis.performance?.now !== 'function') throw new Error('Install a monotonic host clock');
                 return globalThis.performance.now();
             },
-            schedule: (milliseconds, callback) => setTimeout(callback, milliseconds),
+            schedule: (milliseconds, callback) => setTimeout(callback, Math.min(milliseconds, 2147483647)),
             cancel: handle => clearTimeout(handle)
         };
         if (!adapter || ['now', 'schedule', 'cancel'].some(name => typeof adapter[name] !== 'function'))
@@ -26,7 +26,7 @@ class HostClockService {
         this.lastNow = value; return value;
     }
     delay(value) {
-        if (!Number.isInteger(value) || value < -1 || value > 2147483647) throw new RangeError('Invalid timer delay');
+        if (!Number.isInteger(value) || value < -1 || value > 4294967294) throw new RangeError('Invalid timer delay');
     }
     get(id) {
         const timer = this.timers.get(id);
@@ -124,7 +124,7 @@ class HostClockService {
         });
     }
     info() {
-        return {clock: 'host-clock-v1', activeTimers: this.timers.size, readyTimers: this.notifications.size,
+        return {clock: 'host-clock-v2', activeTimers: this.timers.size, readyTimers: this.notifications.size,
             hostWaiters: this.waiters.size, idlePolicy: 'timer-notification-or-explicit-yield'};
     }
 }
@@ -139,6 +139,7 @@ class CliWeak extends CliObject {
 class HostedRuntime extends ManagedRuntime {
     constructor(metadata, write = null) {
         super(metadata, write);
+        this.parents['System.TimeoutException'] = 'System.SystemException';
         this.parents['System.ObjectDisposedException'] = 'System.InvalidOperationException';
         this.identityHashes = new WeakMap(); this.nextHash = 1;
         this.roots = new Map(); this.nextRoot = 1;
@@ -152,6 +153,9 @@ class HostedRuntime extends ManagedRuntime {
     }
     external(method, args) {
         const op = method.intrinsic;
+        if (op === 'clock.now') return this.clock.now();
+        if (op === 'clock.create-wide') return this.clock.create(Number(args[0]), this.nonnull(args[1]));
+        if (op === 'clock.change-wide') { this.clock.change(args[0], Number(args[1])); return null; }
         if (op === 'clock.create') return this.clock.create(args[0], this.nonnull(args[1]));
         if (op === 'clock.change') { this.clock.change(args[0], args[1]); return null; }
         if (op === 'clock.fired') return Number(this.clock.get(args[0]).everQueued);

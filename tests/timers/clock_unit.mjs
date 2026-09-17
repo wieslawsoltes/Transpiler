@@ -57,7 +57,7 @@ await test('failed-arm-releases-record', () => {
 });
 await test('range-and-handle-budget', () => {
     const {service: s} = setup();
-    for (const n of [-2, 2147483648, 0.5, NaN]) assert.throws(() => s.create(n, {}));
+    for (const n of [-2, 4294967295, 0.5, NaN]) assert.throws(() => s.create(n, {}));
     s.nextId = 2147483648; assert.throws(() => s.create(1, {}), /budget/); assert.equal(s.info().activeTimers, 0);
 });
 await test('broadcast-and-generation-wakeup', async () => {

@@ -62,13 +62,32 @@ public class CancellationTokenSource : IDisposable
     private bool _disposed;
     private CallbackList? _callbacks;
     private CancellationTokenRegistration[]? _links;
-    private HostTimer? _timer;
+    private ITimer? _timer;
+    private bool _customTimer;
     public CancellationTokenSource() { }
     public CancellationTokenSource(int millisecondsDelay)
     {
         if (millisecondsDelay < -1) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
-        if (millisecondsDelay == 0) _state = 2;
-        else if (millisecondsDelay != -1) _timer = new HostTimer(millisecondsDelay, CancelFromTimer);
+        InitializeTimer(TimeSpan.FromMilliseconds(millisecondsDelay), TimeProvider.System);
+    }
+    public CancellationTokenSource(TimeSpan delay) : this(delay, TimeProvider.System) { }
+    public CancellationTokenSource(TimeSpan delay, TimeProvider timeProvider)
+    {
+        if (timeProvider == null) throw new ArgumentNullException(nameof(timeProvider));
+        Timeout.Validate(delay, nameof(delay));
+        InitializeTimer(delay, timeProvider);
+    }
+    private void InitializeTimer(TimeSpan delay, TimeProvider provider)
+    {
+        if (delay == TimeSpan.Zero) { _state = 2; return; }
+        // Keep the original duration when dispatching a custom provider.
+        if (object.ReferenceEquals(provider, TimeProvider.System))
+        {
+            if (delay == Timeout.InfiniteTimeSpan) return;
+            _timer = new Timer(_ => CancelFromTimer(), null, delay, Timeout.InfiniteTimeSpan);
+        }
+        else { _customTimer = true; _timer = provider.CreateTimer(_ => CancelFromTimer(), null, delay, Timeout.InfiniteTimeSpan); }
+        if (_state != 0) DisposeTimer();
     }
     private CancellationTokenSource(bool canceled) { _state = canceled ? 2 : 0; }
     public bool IsCancellationRequested => _state != 0;
@@ -80,10 +99,16 @@ public class CancellationTokenSource : IDisposable
     {
         // Argument validation precedes disposal and cancellation checks, as on CoreCLR.
         if (millisecondsDelay < -1) throw new ArgumentOutOfRangeException(nameof(millisecondsDelay));
+        CancelAfterCore(millisecondsDelay);
+    }
+    public void CancelAfter(TimeSpan delay) => CancelAfterCore(Timeout.Validate(delay, nameof(delay)));
+    private void CancelAfterCore(long millisecondsDelay)
+    {
         ThrowIfDisposed();
         if (_state != 0) return;
-        if (_timer != null) _timer.Change(millisecondsDelay);
-        else if (millisecondsDelay != -1) _timer = new HostTimer(millisecondsDelay, CancelFromTimer);
+        var dueTime = TimeSpan.FromMilliseconds(millisecondsDelay);
+        if (_timer != null) _timer.Change(dueTime, Timeout.InfiniteTimeSpan);
+        else if (millisecondsDelay != -1) _timer = new Timer(_ => CancelFromTimer(), null, dueTime, Timeout.InfiniteTimeSpan);
     }
     internal sealed class CallbackList
     {
@@ -145,7 +170,7 @@ public class CancellationTokenSource : IDisposable
         if (_timer != null)
         {
             // Disarming cannot retract an already-queued timer callback.
-            if (!_timer.TryReset()) return false;
+            if (_customTimer || _timer is not Timer timer || !timer.TryReset()) return false;
             _timer = null;
         }
         _callbacks?.Clear(); _callbacks = null; return true;

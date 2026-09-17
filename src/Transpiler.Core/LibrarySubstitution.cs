@@ -8,6 +8,13 @@ public static class LibrarySubstitution
     public const string Policy = "portable-bcl-v1";
     public static IReadOnlyDictionary<string, string> Types { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["[Transpiler.Bcl]Transpiler.Bcl.TimeSpan"] = "System.TimeSpan",
+        ["[Transpiler.Bcl]Transpiler.Bcl.TimeProvider"] = "System.TimeProvider",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Threading.Timeout"] = "System.Threading.Timeout",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Threading.TimerCallback"] = "System.Threading.TimerCallback",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Threading.ITimer"] = "System.Threading.ITimer",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Threading.PeriodicTimer"] = "System.Threading.PeriodicTimer",
+        ["[Transpiler.Bcl]Transpiler.Bcl.Threading.Timer"] = "System.Threading.Timer",
         ["[Transpiler.Bcl]Transpiler.Bcl.ExceptionDispatchInfo"] = "System.Runtime.ExceptionServices.ExceptionDispatchInfo",
         ["[Transpiler.Bcl]Transpiler.Bcl.Async.IAsyncDisposable"] = "System.IAsyncDisposable",
         ["[Transpiler.Bcl]Transpiler.Bcl.Async.IAsyncEnumerable`1"] = "System.Collections.Generic.IAsyncEnumerable`1",
