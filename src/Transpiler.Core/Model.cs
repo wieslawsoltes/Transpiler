@@ -70,6 +70,8 @@ public sealed record AssemblyModel(string Name, int EntryPoint, TypeDefinitionMo
 {
     public const int SchemaVersion = 2;
     public AssemblyIdentity Identity { get; init; } = new(Name, "0.0.0.0", "neutral", "null");
+    public TypeForwarder[] Forwarders { get; init; } = [];
+    public ForwardingBinding[] ForwardingBindings { get; init; } = [];
     public AssemblyIdentity[] References { get; init; } = [];
     public AssemblyInput[] Inputs { get; init; } = [];
     public string RootAssembly { get; init; } = Name;
@@ -78,7 +80,7 @@ public sealed record AssemblyModel(string Name, int EntryPoint, TypeDefinitionMo
     public string[] ExportRoots { get; init; } = [];
     public string[] HostRoots { get; init; } = [];
     public MethodDefinitionModel? Resolve(MethodReference method) => Methods.FirstOrDefault(m =>
-        m.Reference.Assembly == method.Assembly && m.Key == method.Key && m.Reference.ReturnType == method.ReturnType);
+        m.Reference.Assembly == method.Assembly && m.Reference.Instance == method.Instance && m.Reference.GenericArity == method.GenericArity && m.Key == method.Key && m.Reference.ReturnType == method.ReturnType);
     public FieldDefinitionModel? Resolve(FieldReference field) => Fields.FirstOrDefault(f =>
         f.Reference.Assembly == field.Assembly && f.Reference.Key == field.Key && f.Reference.FieldType == field.FieldType);
     public TypeDefinitionModel? FindType(string name) => Types.FirstOrDefault(t => t.Name == name);

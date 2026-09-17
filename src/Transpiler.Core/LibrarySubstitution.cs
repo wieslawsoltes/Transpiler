@@ -63,35 +63,22 @@ public static class LibrarySubstitution
 
     public static AssemblyModel Apply(AssemblyModel input)
     {
-        string Type(string value)
+        var mappings = Types.Select(kv => (From: CliTypeIdentity.Parse(kv.Key).Name!, To: CliTypeIdentity.Parse(kv.Value).Name!))
+            .OrderByDescending(p => p.From.MetadataName.Length).ToArray();
+        NamedTypeIdentity Rewrite(NamedTypeIdentity name)
         {
-            // Application type names are assembly-qualified: a user-defined System.* name cannot enter this policy.
-            foreach (var entry in Types.OrderByDescending(e => e.Key.Length)) value = value.Replace(entry.Key, entry.Value, StringComparison.Ordinal);
-            return value;
+            foreach (var (from, to) in mappings)
+                if (name.AssemblyScope == from.AssemblyScope && (name.MetadataName == from.MetadataName || name.MetadataName.StartsWith(from.MetadataName + "+", StringComparison.Ordinal)))
+                    return to with { MetadataName = to.MetadataName + name.MetadataName[from.MetadataName.Length..] };
+            return name;
         }
-        bool Replaced(string owner) => Types.Values.Any(t => owner == t || owner.StartsWith(t + "<", StringComparison.Ordinal) || owner.StartsWith(t + "+", StringComparison.Ordinal));
-        MethodReference Method(MethodReference method)
+        string Assembly(string original, string type)
         {
-            var type = Type(method.Type);
-            return method with { Type = type, Assembly = Replaced(type) ? "Transpiler.Bcl" : method.Assembly,
-                Parameters = method.Parameters.Select(Type).ToArray(), ReturnType = Type(method.ReturnType),
-                GenericArguments = method.GenericArguments.Select(Type).ToArray() };
+            var owner = CliTypeIdentity.Parse(type);
+            if (owner.Form != CliTypeForm.Named || owner.Name!.AssemblyScope is not null) return original;
+            return mappings.Any(p => owner.Name == p.To || owner.Name.MetadataName.StartsWith(p.To.MetadataName + "+", StringComparison.Ordinal))
+                ? "Transpiler.Bcl" : original;
         }
-        FieldReference Field(FieldReference field)
-        {
-            var type = Type(field.Type);
-            return field with { Type = type, Assembly = Replaced(type) ? "Transpiler.Bcl" : field.Assembly, FieldType = Type(field.FieldType) };
-        }
-        return input with
-        {
-            Types = input.Types.Select(t => t with { Name = Type(t.Name), BaseType = t.BaseType is null ? null : Type(t.BaseType),
-                Interfaces = t.Interfaces.Select(Type).ToArray(), Overrides = t.Overrides.Select(o => new MethodOverride(Method(o.Body), Method(o.Declaration))).ToArray() }).ToArray(),
-            Fields = input.Fields.Select(f => f with { Reference = Field(f.Reference) }).ToArray(),
-            Methods = input.Methods.Select(m => m with { Reference = Method(m.Reference), Locals = m.Locals.Select(Type).ToArray(),
-                Exceptions = m.Exceptions.Select(e => e with { CatchType = e.CatchType is null ? null : Type(e.CatchType) }).ToArray(),
-                Instructions = m.Instructions.Select(i => i with { Operand = i.Operand switch
-                { MethodReference x => Method(x), FieldReference x => Field(x),
-                  string x when i.Code.OperandType is OperandType.InlineType or OperandType.InlineTok => Type(x), _ => i.Operand } }).ToArray() }).ToArray()
-        };
+        return TypeRewriter.Rewrite(input, Rewrite, Assembly);
     }
 }

@@ -28,7 +28,7 @@ internal static class Program
                 {
                     schema = 1, profile = "portable-mvp", targets = new[] { "javascript", "python" }, dispatchModes = new[] { "instruction", "block" },
                     opcodes = CompilerAnalysis.SupportedOpcodes, intrinsics = IntrinsicCatalog.All,
-                    limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "limited type identity only; no member reflection or native interop", "no exception filters", "not a security verifier" }
+                    limitations = new[] { "explicit multi-assembly linking; one version per name", "bounded closed generics; no dynamic generic loading", "limited type identity only; no member reflection or native interop", "two-pass managed filters; no native exception/stack trace parity", "not a security verifier" }
                 }, Json);
                 if (options.Output is null) Console.WriteLine(text); else Write(options.Output, text);
                 return 0;
@@ -96,7 +96,7 @@ internal static class Program
             if (options.Manifest is not null) Write(options.Manifest, JsonSerializer.Serialize(new
             {
                 schema = 2, target = target.ToString(), dispatch = options.Dispatch, bcl = options.Bcl ? LibrarySubstitution.Policy : "none",
-                assemblies = assembly.Inputs, referencePack = managed?.ReferencePack?.Inputs,
+                forwardings = assembly.ForwardingBindings, assemblies = assembly.Inputs, referencePack = managed?.ReferencePack?.Inputs,
                 transpiled = analysis.Methods.Where(m => m.Method.Instructions.Length != 0)
                     .Select(m => new { assembly = m.Method.Reference.Assembly, method = m.Method.Key, instructions = m.Method.Instructions.Length }),
                 intrinsics = analysis.Methods.SelectMany(m => m.Method.Instructions).Select(i => i.Operand).OfType<MethodReference>()

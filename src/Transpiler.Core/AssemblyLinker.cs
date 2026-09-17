@@ -28,10 +28,12 @@ public static class AssemblyLinker
             foreach (var reference in module.References)
                 if (graph.TryGetValue(reference.Name, out var dependency) && reference != dependency.Identity)
                     Fail("TR3003", $"'{module.Identity}' requests '{reference}', but the supplied implementation is '{dependency.Identity}'.");
+        var forwarding = new TypeForwardingResolver(graph);
         var methods = new List<MethodDefinitionModel>(); var fields = new List<FieldDefinitionModel>(); var types = new List<TypeDefinitionModel>();
         var next = 1; var entry = 0;
-        foreach (var module in graph.Values.OrderBy(a => a.Identity.ToString(), StringComparer.Ordinal))
+        foreach (var sourceModule in graph.Values.OrderBy(a => a.Identity.ToString(), StringComparer.Ordinal))
         {
+            var module = forwarding.Rewrite(sourceModule);
             var tokens = new SortedSet<int>(module.Methods.Select(m => m.Token));
             foreach (var reference in module.Methods.SelectMany(m => m.Instructions).Select(i => i.Operand).OfType<MethodReference>()) tokens.Add(reference.Token);
             foreach (var map in module.Types.SelectMany(t => t.Overrides)) { tokens.Add(map.Body.Token); tokens.Add(map.Declaration.Token); }
@@ -51,6 +53,7 @@ public static class AssemblyLinker
         if (duplicate is not null) Fail("TR3004", $"Multiple definitions of '{duplicate.Key}'. Type forwarding requires an explicit resolver policy.");
         return new(root.Name, entry, types.ToArray(), methods.ToArray(), fields.ToArray())
         {
+            ForwardingBindings = forwarding.Bindings,
             RootAssembly = root.Name, Identity = root.Identity, ExportRoots = root.ExportRoots,
             Inputs = graph.Values.SelectMany(m => m.Inputs).OrderBy(i => i.Identity, StringComparer.Ordinal).ToArray()
         };

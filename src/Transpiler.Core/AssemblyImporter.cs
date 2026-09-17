@@ -186,6 +186,7 @@ public static class AssemblyImporter
             return new(name, cor.EntryPointTokenOrRelativeVirtualAddress, types.ToArray(), methods.ToArray(), fields.ToArray())
             {
                 Identity = identity,
+                Forwarders = ForwarderImporter.Read(reader, includeType, name),
                 Inputs = [new(identity.ToString(), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(image)).ToLowerInvariant())],
                 References = reader.AssemblyReferences.Select(h => reader.GetAssemblyReference(h)).Select(a => new AssemblyIdentity(
                     reader.GetString(a.Name), a.Version.ToString(), a.Culture.IsNil ? "neutral" : reader.GetString(a.Culture),
