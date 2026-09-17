@@ -123,6 +123,7 @@ public static partial class CompilerAnalysis
             }
         }
         if (errors.Count != 0) throw new CompilationException(errors.Distinct().ToArray());
+        ByReferenceSafety.Validate(image, analyses);
         return new(image, analyses.OrderBy(a => a.Method.Token).ToArray(), roots.Select(m => m.Key).ToArray());
     }
 

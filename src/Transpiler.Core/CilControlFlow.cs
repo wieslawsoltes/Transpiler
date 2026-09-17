@@ -57,6 +57,14 @@ public static class CilControlFlow
                 regions.Add(new("Filter", clause.FilterStart, clause.HandlerStart));
             }
         }
+        foreach (var filter in method.Exceptions.Where(c => c.Kind == "Filter"))
+        {
+            var endings = instructions.Where(i => filter.FilterStart <= i.Offset && i.Offset < filter.HandlerStart && i.Op == "endfilter").ToArray();
+            if (endings.Length != 1 || endings[0].NextOffset != filter.HandlerStart)
+                Fail("A filter requires one final endfilter immediately before its handler.", filter.FilterStart);
+            if (method.Exceptions.Any(c => filter.FilterStart <= c.TryStart && c.TryStart < filter.HandlerStart))
+                Fail("A filter block cannot contain an embedded try region; call a helper for nested handling.", filter.FilterStart);
+        }
         var orderedRegions = regions.OrderBy(r => r.Start).ThenByDescending(r => r.End).ThenBy(r => r.Kind, StringComparer.Ordinal).ToArray();
         for (int a = 0; a < orderedRegions.Length; a++)
             for (int b = a + 1; b < orderedRegions.Length; b++)

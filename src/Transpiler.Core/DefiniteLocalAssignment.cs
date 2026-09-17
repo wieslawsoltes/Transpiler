@@ -3,16 +3,15 @@ using System.Reflection.Emit;
 namespace Transpiler.Core;
 
 /// <summary>
-/// Proves that every reachable local read/address operation follows a store on every normal incoming path.
-/// Exception-region initialization and address-based first writes are conservatively rejected, not guessed.
+/// Proves that every reachable local read/address operation follows a store on every incoming path. Every instruction in a protected region conservatively contributes
+/// its pre-instruction state to exception entries. Assignments performed solely by filters/finally
+/// are not assumed at continuations; address-based first writes remain conservatively rejected.
 /// </summary>
 public static class DefiniteLocalAssignment
 {
     public static void Validate(MethodDefinitionModel method)
     {
         if (method.InitLocals || method.Locals.Length == 0) return;
-        if (method.Exceptions.Length != 0)
-            throw new CompilationException(new Diagnostic("TR2006", "Uninitialized locals with exception regions require exceptional-edge definite-assignment analysis.", method.Key));
         var instructions = method.Instructions.ToDictionary(i => i.Offset);
         var states = new Dictionary<int, HashSet<int>> { [0] = [] };
         var work = new Queue<int>(); work.Enqueue(0);
@@ -20,7 +19,6 @@ public static class DefiniteLocalAssignment
         {
             if (!instructions.TryGetValue(pc, out var instruction)) continue; // Stack verification diagnoses malformed targets.
             var assigned = new HashSet<int>(states[pc]);
-            if (instruction.Op == "stloc" && instruction.Operand is int slot) assigned.Add(slot);
             void Merge(int target)
             {
                 if (!states.TryGetValue(target, out var previous))
@@ -31,6 +29,19 @@ public static class DefiniteLocalAssignment
                     previous.IntersectWith(assigned);
                     if (previous.Count != count) work.Enqueue(target);
                 }
+            }
+            // Search can enter a catch/filter before finally runs. Never credit a store which
+            // has not yet executed, or an assignment relying only on cleanup/filter acceptance.
+            foreach (var clause in method.Exceptions.Where(c => c.TryStart <= pc && pc < c.TryEnd))
+            {
+                Merge(clause.HandlerStart);
+                if (clause.Kind == "Filter") Merge(clause.FilterStart);
+            }
+            if (instruction.Op == "stloc" && instruction.Operand is int slot) assigned.Add(slot);
+            if (instruction.Op == "endfilter")
+            {
+                foreach (var clause in method.Exceptions.Where(c => c.Kind == "Filter" && c.FilterStart <= pc && pc < c.HandlerStart)) Merge(clause.HandlerStart);
+                continue;
             }
             if (instruction.Op is "ret" or "throw" or "rethrow" or "endfinally") continue;
             if (instruction.Op is "br" or "leave") { Merge((int)instruction.Operand!); continue; }

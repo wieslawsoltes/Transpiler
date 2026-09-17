@@ -103,11 +103,11 @@ public static partial class CompilerAnalysis
             else if (op.StartsWith("stelem", StringComparison.Ordinal)) { Expect(Kind(ElementType(i))); Expect("i4"); Expect("o"); }
             else if (op.StartsWith("ldind", StringComparison.Ordinal) || op == "ldobj")
             {
-                if (!Pop().EndsWith('&')) Fail("Indirect load requires a managed reference.", pc); Push(Kind(ElementType(i)));
+                ByReferenceSafety.ValidateIndirect(image, i, Pop(), method.Key); Push(Kind(ElementType(i)));
             }
             else if (op.StartsWith("stind", StringComparison.Ordinal) || op == "stobj")
             {
-                Expect(Kind(ElementType(i))); if (!Pop().EndsWith('&')) Fail("Indirect store requires a managed reference.", pc);
+                Expect(Kind(ElementType(i))); ByReferenceSafety.ValidateIndirect(image, i, Pop(), method.Key);
             }
             else if (op == "cpobj") { var type = (string)i.Operand!; Expect(type + "&"); Expect(type + "&"); }
             else if (op == "constrained.")
