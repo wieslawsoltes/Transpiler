@@ -10,9 +10,10 @@ namespace Transpiler.Core;
 /// <summary>Imports CLI metadata and CIL without loading the input into the compiler's CLR.</summary>
 public static class AssemblyImporter
 {
-    public static AssemblyModel Read(byte[] image, Func<string, bool>? includeType = null, Func<MethodReference, bool>? includeMethod = null)
+    public static AssemblyModel Read(byte[] image, Func<string, bool>? includeType = null, Func<MethodReference, bool>? includeMethod = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             using var stream = new MemoryStream(image, writable: false);
@@ -125,6 +126,7 @@ public static class AssemblyImporter
             }
             foreach (var handle in reader.TypeDefinitions)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var type = reader.GetTypeDefinition(handle);
                 var typeName = provider.TypeName(handle);
                 if (includeType is not null && !includeType(typeName)) continue;
@@ -157,6 +159,7 @@ public static class AssemblyImporter
                 }
                 foreach (var m in type.GetMethods())
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var definition = reader.GetMethodDefinition(m);
                     var reference = Method(m);
                     if (includeMethod is not null && !includeMethod(reference)) continue;

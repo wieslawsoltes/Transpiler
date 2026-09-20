@@ -22,11 +22,13 @@ public sealed record StackSsaGraph(SsaValue[] Values, SsaPhi[] Phis, SsaBlock[] 
 /// </summary>
 public static class StackSsa
 {
-    public static CompilationAnalysis Prepare(CompilationAnalysis analysis)
+    public static CompilationAnalysis Prepare(CompilationAnalysis analysis, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var search = analysis.Methods.Any(m => m.Method.Exceptions.Any(c => c.Kind == "Filter"));
         return analysis with { Methods = analysis.Methods.Select(m =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var reason = search ? "module-two-pass-search" : Exclusion(m);
             return m with { Ssa = reason is null ? Build(m) : null, SsaExclusion = reason };
         }).ToArray() };

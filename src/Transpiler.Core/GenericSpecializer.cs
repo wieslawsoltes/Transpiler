@@ -40,8 +40,9 @@ public static partial class GenericSpecializer
         return index < arguments.Length ? arguments[index] : m.Value;
     });
 
-    public static AssemblyModel Expand(AssemblyModel input, int maximumMethods = 16384, int maximumTypes = 4096)
+    public static AssemblyModel Expand(AssemblyModel input, int maximumMethods = 16384, int maximumTypes = 4096, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var types = new Dictionary<string, TypeDefinitionModel>(StringComparer.Ordinal);
         var fields = new Dictionary<string, FieldDefinitionModel>(StringComparer.Ordinal);
         var methods = new Dictionary<string, MethodDefinitionModel>(StringComparer.Ordinal);
@@ -174,9 +175,11 @@ public static partial class GenericSpecializer
         var changed = true;
         while (changed)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             changed = false;
             while (pending.TryDequeue(out var work))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 changed = true;
                 string T(string value) => value == work.Template.Reference.Type ? work.Closed.Type : CloseType(Substitute(value, work.Types, work.Methods));
                 MethodReference M(MethodReference method) => Bind(method with

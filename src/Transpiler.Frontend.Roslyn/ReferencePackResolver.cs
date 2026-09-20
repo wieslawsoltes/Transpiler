@@ -9,8 +9,10 @@ public sealed record ReferencePack(string Directory, string Version, string[] As
 /// <summary>Resolves SDK reference assemblies, never runtime implementation assemblies, for C# binding.</summary>
 public static class ReferencePackResolver
 {
-    public static ReferencePack Resolve(string? explicitDirectory = null)
+    public static ReferencePack Resolve(string? explicitDirectory = null, CompilationInputSession? inputs = null)
     {
+        inputs ??= new();
+        inputs.CancellationToken.ThrowIfCancellationRequested();
         string directory;
         if (explicitDirectory is not null) directory = Path.GetFullPath(explicitDirectory);
         else
@@ -29,6 +31,6 @@ public static class ReferencePackResolver
         if (!files.Any(p => Path.GetFileName(p) == "System.Runtime.dll"))
             throw new CompilationException(new Diagnostic("TR0103", "Reference-pack directory does not contain System.Runtime.dll: " + directory));
         return new(directory, new DirectoryInfo(directory).Parent?.Parent?.Name ?? "explicit", files,
-            files.Select(p => new AssemblyInput(Path.GetFileName(p), Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))).ToLowerInvariant())).ToArray());
+            files.Select(p => inputs.Read(p).Fingerprint(Path.GetFileName(p))).ToArray());
     }
 }

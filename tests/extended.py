@@ -20,3 +20,6 @@ def register(h):
 
     import stream_export_batch
     stream_export_batch.register(h)
+
+    import input_batch
+    input_batch.register(h)

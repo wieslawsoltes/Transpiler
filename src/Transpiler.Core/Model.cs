@@ -69,6 +69,7 @@ public sealed record AssemblyModel(string Name, int EntryPoint, TypeDefinitionMo
     MethodDefinitionModel[] Methods, FieldDefinitionModel[] Fields)
 {
     public const int SchemaVersion = 2;
+    public DependencyBinding[] DependencyBindings { get; init; } = [];
     public AssemblyIdentity Identity { get; init; } = new(Name, "0.0.0.0", "neutral", "null");
     public TypeForwarder[] Forwarders { get; init; } = [];
     public ForwardingBinding[] ForwardingBindings { get; init; } = [];

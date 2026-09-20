@@ -34,9 +34,10 @@ public static partial class CompilerAnalysis
         yield return "conv.r4"; yield return "conv.r8"; yield return "conv.r.un";
     }
 
-    public static CompilationAnalysis Analyze(AssemblyModel input)
+    public static CompilationAnalysis Analyze(AssemblyModel input, CancellationToken cancellationToken = default)
     {
-        input = GenericSpecializer.Expand(input);
+        cancellationToken.ThrowIfCancellationRequested();
+        input = GenericSpecializer.Expand(input, cancellationToken: cancellationToken);
         var image = input with { Methods = input.Methods.Select(m => m with { Instructions = m.Instructions.Select(Normalize).ToArray() }).ToArray() };
         var errors = new List<Diagnostic>(); var done = new HashSet<int>(); var queue = new Queue<MethodDefinitionModel>();
         var roots = image.Methods.Where(m => image.ExportRoots.Contains(m.Key)).ToArray();
@@ -55,6 +56,7 @@ public static partial class CompilerAnalysis
         }
         while (queue.TryDequeue(out var method))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!done.Add(method.Token)) continue;
             var before = errors.Count;
             var runtimeBody = method.Instructions.Length == 0 && IntrinsicCatalog.Find(method.Reference, image) is not null;

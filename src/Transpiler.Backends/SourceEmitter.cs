@@ -27,8 +27,9 @@ public sealed record GeneratedSource(string Text, string Extension, int MethodCo
 public static class SourceEmitter
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    public static GeneratedSource Emit(CompilationAnalysis analysis, SourceTarget target, SourceEmissionOptions? options = null)
+    public static GeneratedSource Emit(CompilationAnalysis analysis, SourceTarget target, SourceEmissionOptions? options = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         options ??= new(target == SourceTarget.NativeStd ? DispatchMode.StackSsa : DispatchMode.Instruction);
         if (!Enum.IsDefined(options.Dispatch)) throw new ArgumentOutOfRangeException(nameof(options));
         if (!Enum.IsDefined(target)) throw new ArgumentOutOfRangeException(nameof(target));
@@ -39,7 +40,7 @@ public static class SourceEmitter
         }
         var blocks = options.Dispatch != DispatchMode.Instruction;
         if (options.Dispatch == DispatchMode.StackSsa && analysis.Methods.Any(m => m.Ssa is null && m.SsaExclusion is null))
-            analysis = StackSsa.Prepare(analysis);
+            analysis = StackSsa.Prepare(analysis, cancellationToken);
         var search = analysis.Methods.Any(m => m.Method.Exceptions.Any(c => c.Kind == "Filter"));
         var python = target == SourceTarget.Python;
         var metadata = new BackendMetadata(analysis);
@@ -80,6 +81,7 @@ public static class SourceEmitter
         var count = 0; var cases = 0;
         foreach (var method in analysis.Methods)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (search)
             {
                 var body = new StringBuilder();

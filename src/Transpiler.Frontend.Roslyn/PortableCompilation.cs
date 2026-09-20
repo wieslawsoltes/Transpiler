@@ -3,7 +3,10 @@ using Transpiler.Core;
 
 namespace Transpiler.Frontend.Roslyn;
 
-public sealed record LinkOptions(bool PortableBcl = false, string? ReferencePackDirectory = null, string? CoreLibrary = null);
+public sealed record LinkOptions(bool PortableBcl = false, string? ReferencePackDirectory = null, string? CoreLibrary = null)
+{
+    public IReadOnlyList<string> ReferenceDirectories { get; init; } = [];
+}
 
 /// <summary>Orchestrates explicit implementation inputs, declaration-only contracts, and optional portable libraries.</summary>
 public static class PortableCompilation
@@ -21,23 +24,30 @@ public static class PortableCompilation
         "System.Runtime.CompilerServices.ICriticalNotifyCompletion"
     };
 
-    public static AssemblyModel Link(AssemblyModel root, IEnumerable<string>? implementationPaths = null, LinkOptions? options = null)
+    public static AssemblyModel Link(AssemblyModel root, IEnumerable<string>? implementationPaths = null, LinkOptions? options = null, CompilationInputSession? inputs = null)
     {
         options ??= new();
-        var dependencies = (implementationPaths ?? []).Select(p => AssemblyImporter.Read(File.ReadAllBytes(p))).ToList();
+        inputs ??= new();
+        var token = inputs.CancellationToken;
+        token.ThrowIfCancellationRequested();
+        var closure = options.ReferenceDirectories.Count == 0 ? null :
+            AssemblyClosure.Resolve(root, implementationPaths ?? [], options.ReferenceDirectories, inputs);
+        var dependencies = closure is not null ? closure.Dependencies.ToList() :
+            (implementationPaths ?? []).Select(p => AssemblyImporter.Read(inputs.Read(p).Content.ToArray(), cancellationToken: token)).ToList();
         if (options.PortableBcl)
         {
-            var pack = ReferencePackResolver.Resolve(options.ReferencePackDirectory);
-            var declarations = AssemblyImporter.Read(File.ReadAllBytes(Path.Combine(pack.Directory, "System.Runtime.dll")), Contracts.Contains);
+            var pack = ReferencePackResolver.Resolve(options.ReferencePackDirectory, inputs);
+            var declarations = AssemblyImporter.Read(inputs.Read(Path.Combine(pack.Directory, "System.Runtime.dll")).Content.ToArray(), Contracts.Contains, cancellationToken: token);
             // Reference assemblies supply abstract interface metadata only, never executable stubs.
             declarations = declarations with { ContractsOnly = true, Methods = declarations.Methods.Where(m => m.IsAbstract).ToArray() };
             dependencies.Add(declarations);
-            dependencies.Add(AssemblyImporter.Read(File.ReadAllBytes(typeof(Transpiler.Bcl.Enumerable).Assembly.Location)));
+            dependencies.Add(AssemblyImporter.Read(inputs.Read(typeof(Transpiler.Bcl.Enumerable).Assembly.Location).Content.ToArray(), cancellationToken: token));
             var corePath = options.CoreLibrary ?? Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "System.Private.CoreLib.dll");
-            var original = UpstreamBclCatalog.Import(File.ReadAllBytes(corePath));
+            var original = UpstreamBclCatalog.Import(inputs.Read(corePath).Content.ToArray());
             dependencies.Add(original);
         }
-        var linked = AssemblyLinker.Link(root, dependencies);
+        token.ThrowIfCancellationRequested();
+        var linked = AssemblyLinker.Link(root, dependencies) with { DependencyBindings = closure?.Bindings ?? [] };
         return options.PortableBcl ? LibrarySubstitution.Apply(linked) : linked;
     }
 }

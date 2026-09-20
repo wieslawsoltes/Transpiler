@@ -1,5 +1,7 @@
 using Transpiler.Core;
 
+if (args.Length == 1 && args[0] == "--inputs") { InputChecks.Run(); return; }
+
 if (args.Length == 1 && args[0] == "--streams") { StreamContractChecks.Run(); return; }
 
 if (args.Length == 1 && args[0] == "--ssa") { SsaChecks.Run(); return; }
