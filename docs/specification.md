@@ -1,6 +1,6 @@
 # Portable compiler specification
 
-Updated 2026-09-20 after generalized stream exports and factory ownership. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
+Updated 2026-09-20 after offline dependency closure and compilation input locks. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
 
 ## Inputs, binding and CLI
 
@@ -13,17 +13,28 @@ Commands: compile, emit-pe, inspect, analyze and capabilities.
 | --target js / py | JavaScript ES module or Python source |
 | --out / -o | Target file |
 | --reference / -r | Explicit implementation dependency; repeatable |
+| --reference-dir | Opt-in exact application dependency closure in explicit directories; repeatable |
+| --write-input-lock / --input-lock | Record or verify canonical compiler/input fingerprints; compile only, mutually exclusive |
+| --max-input-bytes / --max-total-input-bytes / --max-input-files | Positive input-I/O limits; defaults 128 MiB, 512 MiB, 4,096 files |
 | --bcl portable / none | Select portable library substitutions and reviewed upstream bodies; default none |
 | --reference-pack / --corelib | Explicit framework contract directory / original implementation assembly |
 | --library / --debug | Library roots / Debug source optimization |
 | --dispatch instruction / block / ssa | Reference instruction mode (default), basic-block coalescing, or bounded stack SSA with explicit fallback |
 | --ir / --manifest / --diagnostics | Analysis, input/method provenance and structured diagnostics |
 
-Exit status is 0 success, 1 compilation/capability rejection, 2 usage/file failure. Successful target writes replace via a temporary file. Failure does not delete an older file at that path; callers must check status. Sidecar writes are not one multi-file transaction.
+Exit status is 0 success, 1 compilation/capability rejection, 2 usage/file failure and 130 cooperative cancellation (TR0003). Successful target writes replace via a temporary file. Failure does not delete an older file at that path; callers must check status. Sidecar writes are not one multi-file transaction.
 
 Linking is single-load-context with one version per assembly simple name and explicit inputs. It checks requested identities and rejects conflicting/reference-only implementation inputs. Explicit scoped ExportedType forwarding chains are supported, including nested types and exact destination identities. General framework-facade normalization, multi-version/load-context binding and automatic package restore remain outside the contract. Structured rewriting covers the current codec, not all CLI modifier/function-pointer/calling-convention information. Executable entry points and eligible public static root-library methods are roots; open generic exports require further design.
 
-Selected budgets remain 256 modules, 16,384 specialized methods, 4,096 constructed types and 4,096 characters per constructed identity. CFG validation limits exception clauses to 512. These are not complete process resource quotas.
+Selected budgets remain 256 modules, 16,384 specialized methods, 4,096 constructed types and 4,096 characters per constructed identity. CFG validation limits exception clauses to 512. Explicit directory closure additionally bounds directories to 256 and reference edges to 16,384. Snapshot I/O enforces configurable per-file/total-byte/file-count limits, including inspected candidates. These are not complete process resource quotas or preemptive CPU deadlines.
+
+## Offline closure and input-lock contract
+
+With --reference-dir, the root and explicit references seed a metadata-only AssemblyRef work queue. Resolution probes only exact simple-name DLL/EXE candidates in authorized directories, rejects reference-only or mismatched identities, treats byte-identical copies as equivalent and rejects byte-distinct exact matches. Cycles terminate through the identity-indexed graph. There is no implicit directory, package or network search. Reviewed framework-name/key-token pairs remain external contracts, not automatically imported implementation assemblies. Existing --reference behavior is unchanged when no reference directory is supplied.
+
+One immutable CompilationInputSession provides hash, metadata, Roslyn-reference and importer bytes. A compilation-input-lock-v1 document pins normalized target/dispatch/BCL options, managed input identities and content, selected reference-pack fingerprints and seven selected compiler/toolchain images. Locks are independent of absolute paths and reference-directory order. They do not pin every OS/runtime dependency, raw source/PDB provenance or authenticate a publisher.
+
+Malformed/unsupported locks fail with TR3310; option/input-set/hash drift fails with TR3311 before target emission or target writes. Old output files are preserved on rejection; explicit/snapshotted input-output collisions are rejected. Ctrl+C and embedding CancellationToken parameters stop work cooperatively at documented phase/work-queue boundaries. Optional parameters preserve source call patterns; binary clients should rebuild. See [input-locks.md](input-locks.md) for the exact API, quotas, cancellation limits and runnable relocated-closure example.
 
 ## Managed semantics and library origin
 
@@ -63,7 +74,7 @@ Each generated module owns separate runtime/static state. `setOutput`/`set_outpu
 
 Ordinary objects use host GC. Weak references, identity hashes and KeepAlive have declared host semantics; JS uses the kept-alive WeakRef mechanism. Forced CLR collection, finalizers, resurrection, pinning and exact heap statistics remain unsupported. The separately linked LogicalHeap manages only its own explicit payloads and roots; it does not enable System.GC.Collect or automatic frame-root scanning.
 
-Target source is deterministic for identical compiler and assembly inputs; installed SDK/reference-pack discovery is not a lockfile. Keep the manifest, source, toolchain and notices with releases. No full BCL/CLI, decimal/native layout/span, general reflection/dynamic code or browser/native-platform claim is made. Bounded stack SSA and restricted native-std scalar C++ output have separate implemented profiles; neither is a full managed native runtime.
+Target source is deterministic for identical compiler and assembly inputs. Optional compilation-input-lock-v1 verifies captured managed/reference-pack/compiler fingerprints; automatic SDK discovery alone does not enforce a lock or full environment isolation. Keep the manifest, source, toolchain and notices with releases. No full BCL/CLI, decimal/native layout/span, general reflection/dynamic code or browser/native-platform claim is made. Bounded stack SSA and restricted native-std scalar C++ output have separate implemented profiles; neither is a full managed native runtime.
 
 Diagnostics retain method/IL context where available: TR2002 for missing implementation, TR2006 for local assignment, TR2110 for CFG/region boundaries, TR300x for linkage, TR310x for specialization and TR3200 for missing original-body contracts. This is not a complete verifier or sandbox; use external process isolation and quotas for untrusted inputs.
 
@@ -80,3 +91,5 @@ Native loop exception precedence is preserved, including JavaScript's preference
 ## Additional diagnostics and provenance
 
 Manifest `forwardings` records used source/destination mappings alongside assembly hashes. TR3010 rejects duplicate/conflicting forwarders; TR3011 cycles/budgets; TR3012 missing destinations; TR3013 missing final definitions; TR3014 target identity mismatch; TR3020 bounded type-codec errors. TR2120 identifies unsafe managed-address origins/storage and TR2121 incompatible indirect access. Existing TR2006 and TR2110 now also cover conservative exception-local assignment and filter layout.
+
+Input manifests additionally record dependencyBindings, canonical input-lock digest/verification status and captured file/byte counts. TR3030-TR3034 describe candidate/closure failures; TR3300 input-I/O quotas; TR3310-TR3311 lock validation/drift; TR0003 cooperative cancellation. These do not replace the existing verifier/linker diagnostics.

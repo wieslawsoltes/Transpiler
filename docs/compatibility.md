@@ -5,7 +5,8 @@ Updated 2026-09-20. Both targets share the compiler analysis and lowering. Entri
 | Area | Implemented/tested | Still outside the guarantee |
 |---|---|---|
 | Frontend / input | C# 14 via Roslyn, actual PE/CIL, Debug and Release | Full project/source-generator/NuGet driver |
-| Assembly graph | Explicit multi-assembly linkage, scoped ExportedType chains, nested forwarding, identity conflicts and deterministic order | General framework facade policy, redirects, multiple versions/load contexts |
+| Assembly graph | Explicit multi-assembly linkage and offline directory closure, scoped ExportedType chains, nested forwarding, exact identity/content conflicts and deterministic order | General framework facade policy, redirects, multiple versions/load contexts |
+| Input reproducibility | Immutable bounded snapshots; path-independent managed/reference-pack/compiler locks; drift rejection before output; cooperative cancellation | Full environment/source/PDB lock, package store/restore, publisher authentication, preemptive CPU or full heap isolation |
 | Structural identity | Recursive scope-aware rewriting of the existing type codec; exact substitution boundaries | Lossless CLI signatures, every custom modifier/function pointer and full loader context |
 | Generics | Bounded closed specialization and distinct statics | Dynamic/open construction, full constraints/code sharing |
 | Values / addresses | Struct copies, aliases, boxing, enums and nullable paths | Explicit native layouts, complete span/ref-struct/byref verification |
@@ -39,7 +40,7 @@ Updated 2026-09-20. Both targets share the compiler analysis and lowering. Entri
 
 ## Evidence and terminology
 
-The configured gate currently contains **268 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
+The configured gate currently contains **274 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
 
 The four new source/stream fixtures add eight differential cases, and the source-host/provenance test adds one extended case. Source callback flags, stale tokens, single consumption, reset reentrancy, cleanup and cancellation are directly tested. The current report, not the configured count, records observed success; see [validation](validation-summary.md).
 
@@ -58,3 +59,7 @@ The duration/provider continuation adds four TimeValues differential cases and f
 ## Generalized stream-export continuation
 
 Managed-stream-v2 adds 30 bounded discovery assertions and six Debug/Release × instruction/block/SSA configurations. Each executes 45 lifecycle scenarios on each host: 540 scenario executions per complete run, plus same-PE CoreCLR oracles, deterministic re-emission and managed bridge provenance. The explicit factory/move/disposal ownership contract and remaining serialization boundaries are in [stream-exports.md](stream-exports.md). Counts do not certify untested shape combinations or complete CLI compatibility.
+
+## Offline input-contract continuation
+
+Six additional harness cases include 52 direct snapshot/lock/closure/cancellation invariants; JavaScript/Python cyclic assembly closures and ordinary/SSA relocated replay; source/BCL/reference-pack/compiler locks; and unchanged forwarded consumers. Conflicting content/version/reference-only inputs, malformed locks, quota exhaustion and output-preservation paths are tested. The exact policies, defaults, diagnostics and remaining isolation boundaries are in [input-locks.md](input-locks.md).

@@ -1,6 +1,6 @@
 # Current compiler architecture
 
-Updated 2026-09-20 after generalized stream export and factory ownership support. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
+Updated 2026-09-20 after generalized stream ownership and reproducible compiler input contracts. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
 
 ## Pipeline and implementation origins
 
@@ -38,6 +38,14 @@ Roslyn is a frontend, not the canonical intermediate representation. Existing DL
 | Transpiler.Cli | Explicit inputs/options, diagnostics, manifests and target output |
 
 Source binding and implementation binding remain separate. Reference assemblies cannot supply executable stubs. Identity checks permit one version per assembly simple name; explicit scoped forwarding chains are resolved before specialization, while general framework-facade normalization, binding redirects, multi-load-context semantics and package restore remain incomplete. CliTypeIdentity models the existing type codec structurally; it is not full lossless CLI signature import. Framework and portable-type normalization still use explicit policies, not a general loader.
+
+## Input snapshots, closure and replay
+
+CompilationInputSession provides single-owner immutable file images, bounded byte/file I/O and cooperative cancellation. Roslyn metadata references, candidate headers, provenance hashes and implementation import use the same captured content. The compiler does not reread a selected dependency after hashing it.
+
+Optional explicit-directory-closure-v1 resolution traverses AssemblyRef edges through a bounded identity-indexed queue. Exact identity and content matching determines a candidate; directory order is not a version/content selection policy. Framework contract references are recorded separately. The existing linker and forwarding resolver still perform executable linkage after metadata-only discovery.
+
+Compilation-input-lock-v1 verifies normalized target/dispatch/BCL options, managed inputs, selected reference-pack files and seven compiler/toolchain images before target emission and writes. Absolute paths are not part of that contract, so byte-identical relocated graphs replay unchanged. Dependency bindings, verified-lock digest and captured I/O counters are exposed in manifests. Locks do not replace package restore, authenticate binary publishers or establish full process isolation; see [input contracts](input-locks.md).
 
 ## Storage, types and dispatch
 

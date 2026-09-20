@@ -27,6 +27,20 @@ python3 artifacts/hello.py hello
 
 To compile existing assemblies, pass the root DLL instead of source and repeat `--reference dependency.dll` for implementation dependencies. Framework source binding uses a selected reference pack, not executable reference stubs. `--reference-pack`, `--corelib`, `--manifest`, `--ir` and `--diagnostics` expose those boundaries.
 
+## Offline dependency closure and locked replay
+
+`--reference-dir` discovers the application AssemblyRef graph only within explicit directories. Exact identity matches with byte-distinct implementations are rejected; reference-only assemblies are never substituted for executable dependencies. One immutable input session supplies the bytes used for hashing, metadata inspection, source binding and importing.
+
+```bash
+dotnet "$CLI" compile App.dll --target js --out app.mjs \
+  --reference-dir vendor --write-input-lock app.inputs.json
+
+dotnet "$CLI" compile App.dll --target js --out app.mjs \
+  --reference-dir relocated/vendor --input-lock app.inputs.json
+```
+
+Locks pin managed PE inputs, the selected reference pack and seven compiler/toolchain images plus target/dispatch/BCL options. Relocation preserves the lock; changed bytes fail before emission and target writes. Input byte/file budgets and cooperative cancellation are exposed through CLI and embedding APIs. This is offline byte-identity replay, not NuGet restore, publisher authentication or full environmental isolation. Run `python3 samples/input-locks/build.py` for a real two-library relocated replay in both targets. See [input contracts](docs/input-locks.md).
+
 ## Two-pass filters, forwarding and verification
 
 Exception filters now execute against live managed activations **before** callee finally/fault unwinding. Tests cover rejecting/throwing filters, helper exceptions, initializer wrapping, rethrow identity and cleanup replacement. Modules needing filters select the `two-pass-managed-v1` runtime; both dispatch modes are supported.
@@ -143,10 +157,10 @@ python3 tests/conformance.py
 dotnet "$CLI" capabilities --out artifacts/capabilities.json
 ```
 
-The current configured corpus contains **268 harness cases**, including ordinary/BCL and SSA Debug/Release configurations, native scalar checks, host ABI, forwarding, verification, filter and clock tests. Clock coverage includes 26 direct host-service checks and 48 compiled lifecycle scenario groups across both hosted targets and instruction/SSA emission. The duration/provider extension adds 176 lifecycle scenario executions and CoreCLR oracles. Generalized stream exports add 30 discovery assertions and 540 lifecycle scenario executions across both targets and all three dispatch modes. Counts are test groupings, not CLI coverage percentages. Read the complete/filtered status and observed results in the report rather than treating registration as proof of success. See [validation](docs/validation-summary.md).
+The current configured corpus contains **274 harness cases**, including ordinary/BCL and SSA Debug/Release configurations, native scalar checks, host ABI, forwarding, verification, filter and clock tests. Clock coverage includes 26 direct host-service checks and 48 compiled lifecycle scenario groups across both hosted targets and instruction/SSA emission. The duration/provider extension adds 176 lifecycle scenario executions and CoreCLR oracles. Generalized stream exports add 30 discovery assertions and 540 lifecycle scenario executions across both targets and all three dispatch modes. Offline input contracts add 52 direct invariants and cyclic/forwarding/source-BCL locked-replay gates. Counts are test groupings, not CLI coverage percentages. Read the complete/filtered status and observed results in the report rather than treating registration as proof of success. See [validation](docs/validation-summary.md).
 
 The harness records whether a run is complete or filtered and refuses empty success. `TRANSPILER_TEST_WORKERS=2 python3 tests/conformance.py` uses bounded parallel case execution with deterministic report ordering; CI clears the filter and uses two workers.
 
-[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Stream factories and export discovery](docs/stream-exports.md) · [Host clocks](docs/host-clocks.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
+[Architecture](docs/architecture.md) · [Specification](docs/specification.md) · [Compatibility](docs/compatibility.md) · [Implementation plan](docs/implementation-plan.md) · [Input locks and offline closure](docs/input-locks.md) · [Testing](docs/testing.md) · [Native host streams](docs/host-streams.md) · [Stream factories and export discovery](docs/stream-exports.md) · [Host clocks](docs/host-clocks.md) · [Host interop research](docs/research/host-streams-2026-09-17.md) · [Async-stream research](docs/research/async-streams-2026-09-16.md) · [Industry research](docs/research/industry-state-2026-09-16.md) · [BCL/runtime research](docs/research/bcl-runtime-2026-09-16.md)
 
 The project does not yet provide complete signature/loader or verification fidelity, general reflection/dynamic loading, native I/O/threads, all layout/span/decimal semantics, integrated ordinary-object logical GC or a managed-object C++ runtime. Stack SSA and restricted scalar C++ output are implemented; neither implies those broader capabilities. Managed two-pass filters and explicit scoped forwarding are implemented, with remaining limits documented. It is not a security sandbox. Read [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md).

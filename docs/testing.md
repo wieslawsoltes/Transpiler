@@ -1,6 +1,6 @@
 # Testing and reproducibility
 
-Updated 2026-09-20 for generalized stream acquisition, host clocks and the expanded SSA/native regression matrix.
+Updated 2026-09-20 for compiler input contracts, generalized stream acquisition, host clocks and the SSA/native regression matrix.
 
 ```bash
 dotnet build Transpiler.slnx -c Release
@@ -11,7 +11,7 @@ The package-free Python harness launches dotnet, Node and Python processes with 
 
 ## Current configured topology
 
-There are currently **268 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
+There are currently **274 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
 
 For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 110 ordinary configurations account for 220 generated console executions; the SSA matrix exercises those fixtures separately. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
@@ -68,3 +68,13 @@ The independent clock-lifecycle CI job supplies early feedback; it does not repl
 `CompilerChecks --streams` runs 30 structural discovery/budget assertions. `TRANSPILER_TEST_FILTER=interop/stream-exports/ python tests/conformance.py` selects six Debug/Release × instruction/block/SSA cases. Each emits the same library DLL to JavaScript and Python, runs 45 lifecycle scenarios per host, compares with a CoreCLR consumer of that same DLL, checks translated Factory/Cursor method provenance and repeats byte-identical emission: 540 translated lifecycle executions in total.
 
 The independent stream-lifecycle CI job runs these checks without replacing the complete conformance job. Cases include concrete/inherited/interface/struct shapes, Task/ValueTask/source-backed acquisition, explicit erased and ambiguous choices, upfront rejection, null/fault/cancellation/acquisition errors, factory cleanup retry, no-move close, native abort/asyncio cancellation, delayed disposal, independent factories and exact Int64 struct elements. All tests retain their process timeouts. [The contract](stream-exports.md) distinguishes pending ownership from successful retirement.
+
+## Offline input-contract gates
+
+`dotnet tests/CompilerChecks/bin/Release/net10.0/CompilerChecks.dll --inputs` runs 52 direct snapshot, lock, closure-policy and cancellation invariants. `TRANSPILER_TEST_FILTER=inputs/ python tests/conformance.py` runs five end-to-end groups; the full suite also registers the direct invariant group, for six additional harness cases.
+
+The end-to-end corpus covers a real three-assembly metadata cycle on both hosted targets, byte-identical ordinary/SSA output after relocating implementations and reordering directories, explicit-reference equivalence, unchanged forwarded consumers, and C# source/BCL locked replay. Source lock fixtures pin 167 reference-pack files and seven compiler/toolchain images in the observed .NET 10 environments. Changed root/library/reference-pack/compiler fingerprints and emission options are rejected.
+
+Negative cases cover same-identity different-content candidates, wrong versions, reference-only assemblies, corrupt matching filenames, missing dependencies, unsafe names, graph/file/byte limits and malformed/duplicate lock JSON. A failed replay preserves an existing output; diagnostics cannot overwrite an explicit or already-captured dependency. Snapshot tests distinguish immutable cached reads from new sessions and exercise pre-canceled and mid-import cancellation.
+
+The independent input-contracts CI job runs the invariants and all five end-to-end groups without replacing the unfiltered conformance job. `samples/input-locks/build.py` separately builds a two-library application, records both target locks, relocates its assemblies and verifies identical output with result 42. See [input-locks.md](input-locks.md) for exact replay, I/O and cancellation boundaries. These tests do not certify all hostile metadata, complete environment isolation or preemptive CPU cancellation.

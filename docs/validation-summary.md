@@ -1,50 +1,55 @@
-# Validation evidence — generalized stream exports
+# Validation evidence — offline dependency closure and input locks
 
-Recorded 2026-09-20. The [duration/provider validation ledger](history/validation-time-services-2026-09-17.md) preserves the previous milestone and exact revision. Earlier counts and exclusions are historical, not the current stream contract.
+Recorded 2026-09-20. The preceding [generalized stream-export ledger](history/validation-stream-exports-2026-09-20.md) is preserved unchanged with its own revision and evidence. Earlier milestones are not reclassified as current input-lock evidence.
 
-## Exact implementation and source identity
+## Exact implementation and CI provenance
 
-Validated commit: **`643ad75ad7613b1e4ddc7e4802a9bb0a6b35283d`**. Git tree: **`897478fa40668ac053d2baa454b57a43478e2bb1`**. The uploaded tree equals the locally tested compiler/test/workflow index exactly.
+Validated implementation commit: **`293a12bb2dcfd79f04ba180222362c468a141003`**.
+Git tree: **`b5c6a48028ffc89ec5975328d35194957309721b`**.
 
-[GitHub workflow 35490492908](https://github.com/wieslawsoltes/Transpiler/actions/runs/35490492908) completed all three jobs successfully: **conformance**, **stream-lifecycle**, and **clock-lifecycle**. The full job passed build, the unfiltered differential gate, redistribution notices and artifact packaging.
+[Workflow 35497517271](https://github.com/wieslawsoltes/Transpiler/actions/runs/35497517271) completed successfully. All four jobs passed: **conformance**, **input-contracts**, **stream-lifecycle** and **clock-lifecycle**. The unfiltered conformance result is separate from the targeted input/stream/clock reports. CI build and source/compiler artifact packaging also succeeded.
 
-The full artifact **10598653391**, `transpiler-build-and-conformance`, has verified SHA-256 **`10a06127042a9c2a5f9bc52c8a60b6ec36092d9b57b856df5eabe87413f9722c`**. Its nested source ZIP comment identifies the implementation commit above. All **210 compiler, test and workflow files** were compared byte-for-byte against the retained source: **zero missing, extra or differing files**.
+The downloaded full artifact **10601452632**, `transpiler-build-and-conformance`, has verified SHA-256 **`565c987a0ab3a3d0c33ebe62788da4983f419ccbedb35b0bbc1e5ae0fb7c0c99`**. Its nested source ZIP comment identifies the exact implementation commit above. All **216 compiler, test and workflow files** were compared byte-for-byte against the local implementation: **zero mismatches**. The solution, Directory.Build.props and global.json were additionally checked unchanged.
 
-The focused stream artifact **10597909631**, `transpiler-stream-export-regressions`, has verified SHA-256 `7855c58567e739e37b014d67dd5dab47ede4d4c02694c32804a35a0578d5621d`. Its report selects six cases and is marked filtered; it is not substituted for the complete result.
+The focused input artifact **10601616666**, `transpiler-input-contract-regressions`, has verified SHA-256 `623ab2b12236fa0256d10395c8862270896d709c978c205124355e4ec5e594bb`. Its five selected end-to-end groups passed with `complete: false` and `filter: inputs/`; the direct 52-invariant executable ran separately in that job. It is not substituted for the complete suite.
 
-## Two complete observed runs
+## Two observed complete runs
 
 | Environment | Registered / selected | Passed | Failed | Complete / filter |
 |---|---|---|---|---|
-| Local Linux, SDK 10.0.100, Node 22.16.0, Python 3.13.5 | 268 / 268 | 268 | 0 | true / empty |
-| GitHub Linux x64, SDK 10.0.401, Node 22.23.2, Python 3.13.15 | 268 / 268 | 268 | 0 | true / empty |
+| Local Linux x64, SDK 10.0.100, Node 22.16.0, Python 3.13.5 | 274 / 274 | 274 | 0 | true / empty |
+| GitHub Linux x64, SDK 10.0.401, Node 22.23.2, Python 3.13.15 | 274 / 274 | 274 | 0 | true / empty |
 
-Both runs used two harness workers. The local Release build reported zero warnings and errors. CI passed its builds independently. Harness counts group tests; they are not full-CLI or BCL compatibility percentages.
+Both reports used two workers. The local Release build reported zero warnings and errors. Counts are registered harness groups, not universal CLI/BCL coverage percentages.
 
-Local report SHA-256: `a56da99b1e9ec381d23592645d3df8dc4e37ba26d24e9cd590699500f8a53c4d`.
+Local full-report SHA-256: `02c94251ff03286bdc9a5fc38a1d88de3b4a215fb18a651721b0d59fe8206978`.
 
-CI complete report SHA-256: `20e3b9981aee3bac5d7002d9f240f270f3a234391ff537210c7ec99360b6f16f`.
+CI full-report SHA-256: `05bf8530aad55a0e35471d1a8d7a03886e942339130942be976ac278b3634d97`.
 
-## New coverage and retained regressions
+The local report identifies Linux 6.18.44/glibc 2.41; CI identifies Linux 6.17.0-1022-azure/glibc 2.39. These are two observed environments, not a claim of Windows/macOS/ARM64 qualification.
 
-One compiler gate runs **30 structural stream-discovery assertions**, including scoped/inherited/struct/multiple-interface shapes, one-wrapper recognition, erased catalogs, nested-wrapper rejection, cycle handling and the 4,096-node graph budget.
+## New input-contract evidence
 
-Six Debug/Release × instruction/block/SSA configurations execute **45 lifecycle scenarios per host: 540 translated scenario executions per complete run**. Each configuration emits a real library DLL, compares a CoreCLR consumer of that same DLL with the generated consumers, checks translated StreamFactory/StreamCursor method-body provenance, and requires byte-identical repeated emission.
+The six new registered groups include **52 direct invariants**, real cyclic assembly closure/replay on both hosted targets, C# source/BCL lock replay on both targets, and unchanged forwarded-consumer resolution. They are part of the 274-case total.
 
-The lifecycle scenarios cover direct/concrete/inherited/custom-interface/value-type sources; Task/ValueTask/source-backed factories; explicit erased and ambiguous choices; no factory execution during inspection/upfront rejection; null/fault/cancellation/acquisition failures; one source consumption; pending-factory cleanup retries; close during acquisition without a move; abort/asyncio cancellation while waiting; delayed and faulting disposal; independent factories; exact Int64 fields; and repeated early-close cleanup. Ownership counters are checked at each scenario boundary.
+Tests verify exact identity/content matching; duplicate identical copies; rejection of byte-distinct same-identity candidates, wrong versions, reference-only images and malformed matching filenames; cycle termination; explicit-reference equivalence; and deterministic instruction/SSA output after moving the implementation graph and changing reference-directory order.
 
-All earlier native-stream, clock/time-service, native C++, SSA, filter, forwarding, verification, collections and logical-heap gates remain in the complete suite. The existing four host-stream configurations were also run separately before the complete suite and passed.
+The source/BCL fixtures each pin **167 reference-pack images** and **seven compiler/toolchain images** in the observed SDK environments. Changed root/library/reference-pack/compiler bytes and emission options fail lock validation. The snapshot checks cover stable cached bytes, independent mutable copies, fresh-session changes, exact byte/file quotas, pre-canceled work and mid-import cancellation. Resolver policy checks include framework-token classification, unsafe path names, directory/edge limits and self-references.
 
-## Independent generated-code replay and example
+Failure-path tests preserve pre-existing target output and prevent diagnostics from overwriting an explicit or already-captured input. Malformed lock schemas, missing sections, duplicate or unknown JSON properties, duplicate identities and invalid hashes are rejected rather than tolerated silently.
 
-The downloaded focused CI artifact was replayed unchanged on local **Node 22.16.0** and **Python 3.13.5**. All **540 scenario executions** passed again, with zero active streams, factories, timers and host waiters at terminal cleanup. No compiler or .NET process participated in that replay. This is execution-only evidence, not a third complete compiler build.
+## Sample and independent generated-code replay
 
-The new `samples/StreamFactories.cs` and both sample drivers were separately compiled and executed. They exercise Task<Counter>, explicitly selected ValueTask<object>, exact Int64 values, early break and awaited asynchronous disposal. Both print `9007199254740993`, `9007199254740994`, `9007199254740993`, `2`, and `0 0 0` on successive lines. [Commands and ownership rules](stream-exports.md).
+`samples/input-locks/build.py` was executed after the local build. It built real Arithmetic.dll and Api.dll dependencies plus Program.dll, recorded JavaScript/Python locks, relocated all three assemblies, verified locked replay, compared target bytes and executed both outputs. Both runs printed **42**.
 
-## Scope and documentation successor
+Four generated modules from the downloaded focused CI artifact were executed unchanged with local Node/Python: the JavaScript/Python SSA cyclic-closure modules printed **42**, and the JavaScript/Python forwarded-consumer modules printed **73**. This execution-only replay did not launch the CLR. It supplements the two full compiler runs; it is not another full-suite claim.
 
-This completes the managed-stream-v2 generalized discovery and asynchronous factory-ownership slice. Nested/custom awaitable factories, runtime-only generic construction, complete ref-struct support, arbitrary object serialization, cross-module object transport and native threading/context semantics remain separate capabilities. The module-wide erased candidate catalog requires explicit selection and a checked actual-result cast, not a promise that every candidate fits every factory result.
+## Retained coverage and scope
 
-Compiler-wide remaining work includes lossless signatures/loader policy, deeper verification, broader BCL/reflection, context/thread and I/O services, ordinary-object collector integration, broader optimization and managed-object native backends. See [the remaining plan](implementation-plan.md).
+All prior ordinary/BCL and SSA differential tests, instruction/block comparisons, native C++ checks, filters, byref/local verification, logical collector tests, time-service ownership and generalized stream-factory lifecycle groups remain passing in the complete suite. This continuation did not replace existing negative cases with blanket acceptance or weaken the unfiltered gate.
 
-The documentation/sample successor preserves all 210 validated compiler/test/workflow files unchanged. CI evidence belongs to the exact implementation commit above; a documentation successor does not claim another compiler-suite run.
+The delivered scope is **explicit-directory-closure-v1**, **compilation-input-lock-v1**, shared bounded snapshots and cooperative cancellation checkpoints. Read [input-locks.md](input-locks.md) for exact APIs, quota defaults and limitations. Input locks identify captured managed/reference/toolchain bytes; they do not provide a package store, network restore, publisher authentication, full environment/source/PDB locking or preemptive CPU/heap isolation.
+
+Lossless CLI signatures, deeper exceptional/byref verification, broader BCL/reflection, contexts/threads/I/O, ordinary-object collector integration, expanded optimization and managed-object native backends remain in the [implementation plan](implementation-plan.md). Passing this milestone does not certify those separate capabilities.
+
+The final documentation-only successor leaves all 216 validated compiler/test/workflow files and the tested input-lock sample unchanged. The successful CI evidence belongs to the implementation commit above; the documentation successor does not claim an independent suite rerun.
