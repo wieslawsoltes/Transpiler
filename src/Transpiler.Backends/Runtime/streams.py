@@ -13,7 +13,7 @@ class StreamCleanupPendingError(TimeoutError):
 
 
 class ManagedAsyncIterator:
-    def __init__(self, runtime, name, args, max_steps, cleanup_steps, yield_host):
+    def __init__(self, runtime, name, args, max_steps, cleanup_steps, yield_host, element_type=None):
         self.runtime, self.name, self.args = runtime, name, list(args)
         self.max_steps = max_steps
         self.cleanup_steps = max_steps if cleanup_steps is None else cleanup_steps
@@ -26,9 +26,9 @@ class ManagedAsyncIterator:
         if len(candidates) != 1: raise ValueError('Use an unambiguous exported stream signature: ' + name)
         method = runtime.meta['methods'][candidates[0][1]]
         if len(method['params']) != len(self.args): raise ValueError('Incorrect stream argument count')
-        self.binding = runtime.meta['streamBindings'].get(method['returns'])
-        if not self.binding: raise TypeError('Export requires a linked IAsyncEnumerable<T> stream contract')
+        self.binding = runtime.stream_binding(name, element_type)
         self.cursor = None
+        self.factory_owned = False
         self.closed = self.stopping = self.cancel_sent = False
         self.reason = self.cancel_error = None
         self._active_task = self._move_done = self._loop = None
@@ -41,7 +41,7 @@ class ManagedAsyncIterator:
     @property
     def pending(self):
         if self.cursor is None: return None
-        return 'move' if self.call('get_MovePending') else 'dispose' if self.call('get_DisposePending') else None
+        return 'factory' if self.call('get_FactoryPending') else 'move' if self.call('get_MovePending') else 'dispose' if self.call('get_DisposePending') else None
 
     def call(self, member): return self.runtime.call(self.binding['methods'][member], [self.cursor])
 
@@ -70,12 +70,24 @@ class ManagedAsyncIterator:
     def _open(self):
         if self.cursor is not None: return
         enumerable = self.runtime.invoke_export(self.name, self.args)
-        self.cursor = self.runtime.call(self.binding['methods']['Open'], [enumerable])
+        self.cursor = self.runtime.call(self.binding['open'], [enumerable])
         self.args = None
         self.runtime.active_streams += 1
+        self.factory_owned = bool(self.call('get_FactoryPending'))
+        if self.factory_owned: self.runtime.active_stream_factories += 1
+
+    def _finish_factory(self):
+        try: self.call('FinishFactory')
+        finally:
+            if self.factory_owned and not self.call('get_FactoryPending'):
+                self.factory_owned = False
+                self.runtime.active_stream_factories -= 1
 
     def _observe_closed(self):
         if self.cursor is not None and self.call('get_IsClosed'):
+            if self.factory_owned:
+                self.factory_owned = False
+                self.runtime.active_stream_factories -= 1
             self.cursor = None
             self.runtime.active_streams -= 1
         if self.cursor is None:
@@ -98,6 +110,11 @@ class ManagedAsyncIterator:
         self.stopping = True
         if self.cursor is None: self._observe_closed(); return
         try:
+            if self.call('get_FactoryPending'):
+                self._request_cancel()
+                try: await self._wait('get_FactoryCompleted', self.cleanup_steps, True)
+                except BaseException as error: raise StreamCleanupPendingError('factory') from error
+                self._finish_factory()
             if self.call('get_MovePending'):
                 self._request_cancel()
                 try: await self._wait('get_MoveCompleted', self.cleanup_steps, True)
@@ -119,11 +136,18 @@ class ManagedAsyncIterator:
         self._active_task = _asyncio.current_task()
         self._move_done = self._loop.create_future()
         try:
-            self._check_abort(); self._open(); self.call('StartMove')
-            await self._wait('get_MoveCompleted', self.max_steps, False)
-            self._check_abort()
-            more = self.call('FinishMove')
-            ended = not more or self.stopping
+            self._check_abort(); self._open()
+            if self.call('get_FactoryPending'):
+                await self._wait('get_FactoryCompleted', self.max_steps, False)
+                self._finish_factory()
+            if self.stopping:
+                ended = True
+            else:
+                self._check_abort(); self.call('StartMove')
+                await self._wait('get_MoveCompleted', self.max_steps, False)
+                self._check_abort()
+                more = self.call('FinishMove')
+                ended = not more or self.stopping
             if ended: await self._drain_dispose()
             else: value = self.runtime.stream_value(self.call('get_Current'), self.binding['element'])
         except BaseException:
@@ -151,14 +175,36 @@ class ManagedAsyncIterator:
 class StreamRuntime(ArrayRuntime):
     def __init__(self, metadata, write=None):
         super().__init__(metadata, write)
-        self.active_streams = 0
+        self.active_streams = self.active_stream_factories = 0
 
-    def stream(self, name, args=(), *, max_steps=100000, cleanup_steps=None, yield_host=None):
-        return ManagedAsyncIterator(self, name, args, max_steps, cleanup_steps, yield_host)
+    def stream_info(self, name):
+        candidates = [(k, v) for k, v in self.meta['exports'].items() if k == name or k.split('(')[0] == name]
+        if len(candidates) != 1: raise ValueError('Use an unambiguous exported stream signature: ' + name)
+        method = self.meta['methods'][candidates[0][1]]
+        descriptor = self.meta['streamBindings'].get(method['returns'])
+        if not descriptor: raise TypeError('Export has no linked stream contract: ' + name)
+        return dict(policy=descriptor['policy'], returnType=method['returns'], sourceType=descriptor['sourceType'],
+                    kind=descriptor['kind'], requiresElement=descriptor['requiresElement'], elements=tuple(descriptor['choices']))
+
+    def stream_binding(self, name, element):
+        info = self.stream_info(name)
+        if element is not None and not isinstance(element, str): raise TypeError('element_type must be a linked type identity')
+        if element is None and info['requiresElement']:
+            raise TypeError('Explicit element_type is required; choose from stream_info(name)["elements"]')
+        selected = info['elements'][0] if element is None else element
+        if selected not in info['elements']: raise TypeError('Requested stream element contract was not linked: ' + selected)
+        return self.meta['streamBindings'][info['returnType']]['choices'][selected]
+
+    def stream(self, name, args=(), *, max_steps=100000, cleanup_steps=None, yield_host=None, element_type=None):
+        return ManagedAsyncIterator(self, name, args, max_steps, cleanup_steps, yield_host, element_type)
 
     def stream_value(self, value, type_name):
         if isinstance(value, CliString): return value.text
         return bool(value) if type_name == 'System.Boolean' else value
 
     def runtime_info(self):
-        return dict(super().runtime_info(), activeStreams=self.active_streams, streamPolicy='managed-stream-v1')
+        return dict(super().runtime_info(), activeStreams=self.active_streams, activeStreamFactories=self.active_stream_factories, streamPolicy='managed-stream-v2')
+
+
+def stream_info(name):
+    return R.stream_info(name)

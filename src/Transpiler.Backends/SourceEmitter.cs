@@ -96,7 +96,7 @@ public static class SourceEmitter
         {
             output.AppendLine("\ndef invoke(name, args=()):\n    return R.invoke_export(name, list(args))");
             output.AppendLine("\nasync def invoke_async(name, args=(), max_steps=100000):\n    return await R.await_export(name, list(args), max_steps)");
-            output.AppendLine("\ndef stream(name, args=(), *, max_steps=100000, cleanup_steps=None, yield_host=None):\n    return R.stream(name, args, max_steps=max_steps, cleanup_steps=cleanup_steps, yield_host=yield_host)");
+            output.AppendLine("\ndef stream(name, args=(), *, max_steps=100000, cleanup_steps=None, yield_host=None, element_type=None):\n    return R.stream(name, args, max_steps=max_steps, cleanup_steps=cleanup_steps, yield_host=yield_host, element_type=element_type)");
             output.AppendLine("\ndef main(args=()):\n    return R.main(list(args))");
             output.AppendLine("\ndef set_output(writer):\n    R.write = writer");
             output.AppendLine("\nif __name__ == '__main__' and metadata['entry'] is not None:\n    try:\n        sys.exit(main(sys.argv[1:]))\n    except CliError as error:\n        sys.stderr.write(str(error) + '\\n')\n        sys.exit(1)");

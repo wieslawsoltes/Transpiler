@@ -147,16 +147,30 @@ public static partial class GenericSpecializer
                 m.Reference.Name != ".cctor" && m.Reference.GenericArity == 0 && input.FindType(m.Reference.Type)?.GenericArity == 0).ToArray();
         var exports = roots.Select(m => Bind(m.Reference)).ToArray();
         var hostRoots = new HashSet<string>(StringComparer.Ordinal);
-        // Native host streams call a closed managed cursor; these calls are not in application IL.
-        if (typeTemplates.ContainsKey(StreamContracts.Cursor))
+        // Factories can expose closed stream types only after their method bodies have been visited.
+        // Revisit this worklist until interface discovery and generic reachability reach one fixed point.
+        var streamRoots = new HashSet<string>(StringComparer.Ordinal);
+        void RootStreams()
+        {
+            if (!typeTemplates.ContainsKey(StreamContracts.Factory)) return;
+            var closedTypes = types.Keys.ToArray();
             foreach (var export in exports)
-                if (StreamContracts.Element(export.ReturnType) is { } element)
+            {
+                var shape = StreamContracts.Discover(export.ReturnType, t => types.GetValueOrDefault(t), closedTypes);
+                foreach (var element in shape.Elements)
                 {
+                    if (!streamRoots.Add(shape.ReturnType + "|" + element)) continue;
                     var cursor = CloseType(StreamContracts.Cursor + "<" + element + ">");
                     foreach (var member in input.Methods.Where(m => m.Reference.Type == StreamContracts.Cursor &&
                         StreamContracts.Members.Contains(m.Reference.Name)))
                         hostRoots.Add(Bind(member.Reference with { Type = cursor }).Key);
+                    var factory = CloseType(shape.BridgeType(element));
+                    foreach (var member in input.Methods.Where(m => m.Reference.Type == StreamContracts.Factory &&
+                        m.Reference.Name == shape.OpenMethod))
+                        hostRoots.Add(Bind(member.Reference with { Type = factory }).Key);
                 }
+            }
+        }
         var changed = true;
         while (changed)
         {
@@ -270,6 +284,7 @@ public static partial class GenericSpecializer
                     }
                 }
             }
+            RootStreams();
             changed |= pending.Count != 0;
         }
         return input with

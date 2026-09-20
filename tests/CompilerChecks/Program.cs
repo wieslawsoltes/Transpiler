@@ -1,5 +1,7 @@
 using Transpiler.Core;
 
+if (args.Length == 1 && args[0] == "--streams") { StreamContractChecks.Run(); return; }
+
 if (args.Length == 1 && args[0] == "--ssa") { SsaChecks.Run(); return; }
 if (args.Length == 2 && args[0] == "--emit-ssa-library") { SsaFixture.Write(args[1], true); return; }
 if (args.Length == 2 && args[0] == "--emit-ssa") { SsaFixture.Write(args[1]); return; }

@@ -13,6 +13,7 @@ namespace Transpiler.Bcl.Interop;
 public sealed class StreamCursor<T>
 {
     private IAsyncEnumerator<T>? _enumerator;
+    private IStreamFactory<T>? _factory;
     private CancellationTokenSource? _cancellation;
     private ValueTask<bool> _move;
     private ValueTask _dispose;
@@ -38,6 +39,33 @@ public sealed class StreamCursor<T>
         catch { cancellation.Dispose(); throw; }
     }
 
+    private StreamCursor(IStreamFactory<T> factory)
+    { _factory = factory; _cancellation = new CancellationTokenSource(); }
+
+    public static StreamCursor<T> FromFactory(IStreamFactory<T> factory)
+    {
+        if (factory == null) throw new ArgumentNullException(nameof(factory));
+        return new StreamCursor<T>(factory);
+    }
+
+    public bool FactoryPending => _factory != null;
+    public bool FactoryCompleted => _factory != null && _factory.IsCompleted;
+
+    public void FinishFactory()
+    {
+        var factory = _factory;
+        if (factory == null || !factory.IsCompleted) throw new InvalidOperationException("No completed factory is available.");
+        _factory = null;
+        try
+        {
+            var enumerable = factory.Finish();
+            if (enumerable == null) throw new ArgumentNullException(nameof(enumerable));
+            _enumerator = enumerable.GetAsyncEnumerator(_cancellation!.Token);
+            if (_enumerator == null) throw new InvalidOperationException("GetAsyncEnumerator returned null.");
+        }
+        catch { Release(); throw; }
+    }
+
     public bool IsClosed => _closed;
     public bool MovePending => _moving;
     public bool MoveCompleted => _moving && _move.IsCompleted;
@@ -47,7 +75,7 @@ public sealed class StreamCursor<T>
 
     public void StartMove()
     {
-        if (_closed || _ended || _moving || _disposing) throw new InvalidOperationException("The cursor cannot start another move.");
+        if (_closed || _ended || _moving || _disposing || _factory != null) throw new InvalidOperationException("The cursor cannot start another move.");
         _hasCurrent = false;
         try { _move = _enumerator!.MoveNextAsync(); _moving = true; }
         catch { _ended = true; throw; }
@@ -72,7 +100,7 @@ public sealed class StreamCursor<T>
     public void StartDispose()
     {
         if (_closed || _disposing) return;
-        if (_moving) throw new InvalidOperationException("Consume the outstanding move before disposal.");
+        if (_moving || _factory != null) throw new InvalidOperationException("Consume the outstanding factory/move before disposal.");
         _hasCurrent = false; _ended = true; _disposing = true;
         try { _dispose = _enumerator!.DisposeAsync(); }
         catch { Release(); throw; }
@@ -91,7 +119,7 @@ public sealed class StreamCursor<T>
     private void Release()
     {
         var cancellation = _cancellation;
-        _enumerator = null; _cancellation = null; _move = default; _dispose = default;
+        _enumerator = null; _factory = null; _cancellation = null; _move = default; _dispose = default;
         _hasCurrent = false; _moving = false; _disposing = false; _closed = true;
         cancellation?.Dispose();
     }

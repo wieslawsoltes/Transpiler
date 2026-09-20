@@ -23,16 +23,15 @@ class ManagedAsyncIterator {
         if (entries.length !== 1) throw new TypeError('Use an unambiguous exported stream signature: ' + name);
         const method = runtime.meta.methods[entries[0][1]];
         if (method.params.length !== args.length) throw new TypeError('Incorrect stream argument count');
-        this.binding = runtime.meta.streamBindings[method.returns];
-        if (!this.binding) throw new TypeError('Export requires a linked IAsyncEnumerable<T> stream contract');
-        this.cursor = null; this.closed = false; this.stopping = false;
+        this.binding = runtime.stream_binding(name, options.elementType);
+        this.cursor = null; this.factoryOwned = false; this.closed = false; this.stopping = false;
         this.busy = null; this.closing = null; this.hasReason = false; this.reason = undefined;
         this.cancelSent = false; this.cancelError = null; this.listener = null; this.callingYield = false;
     }
     [Symbol.asyncIterator]() { return this; }
     get pending() {
         if (!this.cursor) return null;
-        return this.call('get_MovePending') ? 'move' : this.call('get_DisposePending') ? 'dispose' : null;
+        return this.call('get_FactoryPending') ? 'factory' : this.call('get_MovePending') ? 'move' : this.call('get_DisposePending') ? 'dispose' : null;
     }
     call(member) { return this.runtime.call(this.binding.methods[member], [this.cursor]); }
     requestCancel() {
@@ -52,20 +51,33 @@ class ManagedAsyncIterator {
     open() {
         if (this.cursor) return;
         const enumerable = this.runtime.invoke_export(this.name, this.args);
-        this.cursor = this.runtime.call(this.binding.methods.Open, [enumerable]);
+        this.cursor = this.runtime.call(this.binding.open, [enumerable]);
         this.args = null; this.runtime.activeStreams++;
+        this.factoryOwned = Boolean(this.call('get_FactoryPending'));
+        if (this.factoryOwned) this.runtime.activeStreamFactories++;
         if (this.signal) {
             this.listener = () => this.cancel(this.signal.reason ?? streamAbortError());
             this.signal.addEventListener('abort', this.listener, { once: true });
         }
         this.checkAbort();
     }
+    finishFactory() {
+        try { this.call('FinishFactory'); }
+        finally {
+            if (this.factoryOwned && !this.call('get_FactoryPending')) {
+                this.factoryOwned = false; this.runtime.activeStreamFactories--;
+            }
+        }
+    }
     detachSignal() {
         if (this.listener) this.signal.removeEventListener('abort', this.listener);
         this.listener = null;
     }
     observeClosed() {
-        if (this.cursor && this.call('get_IsClosed')) { this.cursor = null; this.runtime.activeStreams--; }
+        if (this.cursor && this.call('get_IsClosed')) {
+            if (this.factoryOwned) { this.factoryOwned = false; this.runtime.activeStreamFactories--; }
+            this.cursor = null; this.runtime.activeStreams--;
+        }
         if (!this.cursor) {
             this.closed = true; this.args = null; this.detachSignal(); this.signal = null;
             this.yieldHost = null; // No enumeration-owned callback survives successful/failed terminal disposal.
@@ -92,6 +104,13 @@ class ManagedAsyncIterator {
         this.stopping = true; this.detachSignal();
         if (!this.cursor) { this.observeClosed(); return; }
         try {
+            if (this.call('get_FactoryPending')) {
+                this.requestCancel();
+                try { await this.wait('get_FactoryCompleted', this.cleanupSteps, true); }
+                catch (error) { throw new StreamCleanupPendingError('factory', error); }
+                // Retain the same factory on timeout; acquisition/disposal never issues a move.
+                this.finishFactory();
+            }
             if (this.call('get_MovePending')) {
                 this.requestCancel();
                 try { await this.wait('get_MoveCompleted', this.cleanupSteps, true); }
@@ -113,7 +132,13 @@ class ManagedAsyncIterator {
             throw new TypeError('Stream cleanup must finish before further iteration');
         }
         try {
-            this.checkAbort(); this.open(); this.call('StartMove');
+            this.checkAbort(); this.open();
+            if (this.call('get_FactoryPending')) {
+                await this.wait('get_FactoryCompleted', this.maxSteps, false);
+                this.finishFactory();
+            }
+            if (this.stopping) { await this.drainDispose(); return { done: true, value: undefined }; }
+            this.checkAbort(); this.call('StartMove');
             await this.wait('get_MoveCompleted', this.maxSteps, false);
             this.checkAbort();
             const more = this.call('FinishMove');
@@ -151,12 +176,30 @@ class ManagedAsyncIterator {
 if (typeof Symbol.asyncDispose === 'symbol')
     ManagedAsyncIterator.prototype[Symbol.asyncDispose] = async function () { await this.return(); };
 class StreamRuntime extends ArrayRuntime {
-    constructor(metadata, write = null) { super(metadata, write); this.activeStreams = 0; }
+    constructor(metadata, write = null) { super(metadata, write); this.activeStreams = 0; this.activeStreamFactories = 0; }
+    stream_info(name) {
+        const entries = Object.entries(this.meta.exports).filter(([k]) => k === name || k.split('(')[0] === name);
+        if (entries.length !== 1) throw new TypeError('Use an unambiguous exported stream signature: ' + name);
+        const method = this.meta.methods[entries[0][1]], descriptor = this.meta.streamBindings[method.returns];
+        if (!descriptor) throw new TypeError('Export has no linked stream contract: ' + name);
+        return Object.freeze({policy: descriptor.policy, returnType: method.returns, sourceType: descriptor.sourceType,
+            kind: descriptor.kind, requiresElement: descriptor.requiresElement, elements: Object.freeze(Object.keys(descriptor.choices))});
+    }
+    stream_binding(name, element) {
+        const info = this.stream_info(name);
+        if (element !== undefined && typeof element !== 'string') throw new TypeError('elementType must be a linked type identity');
+        if (element === undefined && info.requiresElement) throw new TypeError('Explicit elementType is required; choose from streamInfo(name).elements');
+        const selected = element ?? info.elements[0];
+        if (!info.elements.includes(selected)) throw new TypeError('Requested stream element contract was not linked: ' + selected);
+        return this.meta.streamBindings[info.returnType].choices[selected];
+    }
     stream(name, args = [], options = {}) { return new ManagedAsyncIterator(this, name, args, options); }
     stream_value(value, type) {
         if (value instanceof CliString) return value.text;
         if (value instanceof CliNaN) return Number(value);
         return type === 'System.Boolean' ? Boolean(value) : value;
     }
-    runtime_info() { return { ...super.runtime_info(), activeStreams: this.activeStreams, streamPolicy: 'managed-stream-v1' }; }
+    runtime_info() { return { ...super.runtime_info(), activeStreams: this.activeStreams, activeStreamFactories: this.activeStreamFactories, streamPolicy: 'managed-stream-v2' }; }
 }
+
+export function streamInfo(name) { return R.stream_info(name); }

@@ -17,3 +17,6 @@ def register(h):
     timer_batch.register(h)
     import time_batch
     time_batch.register(h)
+
+    import stream_export_batch
+    stream_export_batch.register(h)
