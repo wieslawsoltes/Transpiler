@@ -1,6 +1,6 @@
 # Native host async streams
 
-Implemented 2026-09-17. ABI policy: **managed-stream-v1**. This is an addition to generated metadata schema 2 and the portable-bcl-v1 library policy. It adapts exported managed streams to native JavaScript/Python iteration without replacing their C# state-machine or ValueTask implementation.
+Updated 2026-09-20. ABI policy: **managed-stream-v2**. This is an addition to generated metadata schema 2 and the portable-bcl-v1 library policy. It adapts exported managed streams to native JavaScript/Python iteration without replacing their C# state-machine or ValueTask implementation.
 
 ## Run the example
 
@@ -34,7 +34,7 @@ The last zero is the active-stream count after awaited disposal, not a host-GC s
 
 ## Export contract
 
-Declare an eligible public static library export returning **IAsyncEnumerable<T>**. Generic instantiation and the portable implementation must be linked. The current ABI recognizes that declared interface exactly; arbitrary concrete return types, object-returning factories and Task<IAsyncEnumerable<T>> are not automatically adapted. `stream` rejects missing/ambiguous names, wrong arity, invalid options and absent bindings before invoking application code.
+Declare an eligible public static library export returning IAsyncEnumerable<T>, a concrete/inherited/value-type enumerable, or one Task/ValueTask wrapper around such a source. Generic instantiation and the portable implementation must be linked. Object-erased and multi-interface sources require explicit elementType/element_type selection among the closed contracts reported by streamInfo/stream_info. See [generalized stream exports](stream-exports.md) for discovery, checked casts and pending factory ownership. `stream` rejects missing/ambiguous names, wrong arity, invalid options and absent bindings before invoking application code.
 
 The stream factory and GetAsyncEnumerator are lazy: the first next/anext invokes them. Closing an unused adapter does not construct an enumerator. Each adapter is single-use and owns one enumeration; calling stream again creates a separate adapter. The returned managed factory is still responsible for the normal semantics of repeated enumeration.
 
@@ -73,10 +73,11 @@ JavaScript provides next(), return(value), throw(error), Symbol.asyncIterator, a
 | cleanupSteps | cleanup_steps | Maximum iterations per drain/disposal wait; defaults to move budget |
 | yieldHost | yield_host | Trusted cooperative completion hook returning an awaitable |
 | signal | cancel() / asyncio task cancellation | Host cancellation entry point |
+| elementType | element_type | Explicit linked element contract for erased or ambiguous exports |
 
 Budgets are positive safe integers, capped at JavaScript's safe-integer range on both targets. When no managed work is immediately available but a native timer is armed, the default adapters wait for its notification. Otherwise JS yields through a host timer turn and Python through asyncio.sleep(0). Explicit yield callbacks retain their existing scheduling behavior; see [host clocks](host-clocks.md). The callback can supply external managed completion, but **must not await operations on its own stream**. Direct detected reentrant close is rejected; arbitrary causal await cycles are not generally detectable.
 
-Adapter `closed` is true only after terminal retirement or closure before acquisition. `pending` is null, move or dispose. These observations are not permission to overlap operations or mutate implementation fields. `runtimeInfo()` / `runtime_info()` adds `activeStreams` and `streamPolicy`. Active-stream accounting includes pending-cleanup cursors and excludes never-opened adapters. It is not an allocation/root count and does not root all objects itself.
+Adapter `closed` is true only after terminal retirement or closure before acquisition. `pending` is null, factory, move or dispose. These observations are not permission to overlap operations or mutate implementation fields. `runtimeInfo()` / `runtime_info()` adds `activeStreams`, `activeStreamFactories` and `streamPolicy`. Active-stream accounting includes pending-cleanup cursors and excludes never-opened adapters. It is not an allocation/root count and does not root all objects itself.
 
 String and Boolean elements are unwrapped, Int64/UInt64 retain exact target integer representations, and floating values retain tested NaN/signed-zero behavior. Struct Current values are copied by managed value semantics and exposed as opaque runtime wrappers; this is not a general object-to-JSON or cross-module ABI. Object/array values retain the existing wrapper policy.
 
@@ -90,7 +91,7 @@ Cancellation is cooperative. A source can ignore its token and require external 
 
 ## Cleanup pending: retain, complete, retry
 
-When an outstanding move or disposal cannot finish within the cleanup budget, the adapter raises **StreamCleanupPendingError**. It retains the exact operation and does not report closed, issue overlapping disposal, or pretend resources were released. The phase property identifies move or dispose. JS attaches cause and, where applicable, operationError; Python uses exception chaining.
+When an outstanding move or disposal cannot finish within the cleanup budget, the adapter raises **StreamCleanupPendingError**. It retains the exact operation and does not report closed, issue overlapping disposal, or pretend resources were released. The phase property identifies factory, move or dispose. Pending factory cleanup retains the original Task/ValueTask operation and, after completion, acquires and disposes the enumerator without moving it; it does not attempt arbitrary cancellation of the factory Task. JS attaches cause and, where applicable, operationError; Python uses exception chaining.
 
 Retain the adapter, arrange completion through the application's established mechanism, then await return()/aclose() again. The retry polls and consumes the existing operation, not a new one. Calling next/anext while cleanup is pending fails.
 

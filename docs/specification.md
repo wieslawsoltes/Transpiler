@@ -1,6 +1,6 @@
 # Portable compiler specification
 
-Updated 2026-09-17 after the host-clock and timed-cancellation continuation. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
+Updated 2026-09-20 after generalized stream exports and factory ownership. Output metadata schema 2; compiler profile `portable-mvp`; optional library policy `portable-bcl-v1`; original-body catalog `corelib-integer-v1`. Earlier documents in history describe earlier subsets.
 
 ## Inputs, binding and CLI
 
@@ -53,7 +53,7 @@ AsyncIteratorMethodBuilder and mapped enumeration/disposal contracts support the
 
 `invoke(name,args)` selects an exact signature or unambiguous Type::Method export. Primitive/string results are converted; supported host-array inputs are copied into managed wrappers. JavaScript Int64/UInt64 uses BigInt outside Number's exact integer range. General interprocess/byref/callback marshalling is not supplied.
 
-`invokeAsync(name,args,{maxSteps,yieldHost,signal})` and Python `invoke_async(name,args,max_steps=100000)` handle Task and ValueTask results, including source-backed operations. JavaScript yields through the supplied async callback or default host scheduling; Python cooperates with asyncio. The separate `stream` ABI adapts exports declared exactly as IAsyncEnumerable<T> to native async-iterator protocols. It is not automatically selected by invokeAsync, and it does not serialize arbitrary object graphs.
+`invokeAsync(name,args,{maxSteps,yieldHost,signal})` and Python `invoke_async(name,args,max_steps=100000)` handle Task and ValueTask results, including source-backed operations. JavaScript yields through the supplied async callback or default host scheduling; Python cooperates with asyncio. The separate managed-stream-v2 `stream` ABI adapts direct/concrete/inherited/value-type enumerables and one Task/ValueTask factory wrapper, with explicit linked element selection for erased or ambiguous sources. It is not automatically selected by invokeAsync, and it does not serialize arbitrary object graphs.
 
 Step budgets count pump iterations, not wall-clock work inside a call. Timeout does not cancel a source or interrupt an infinite method. The host-clock-v2 capability implements Int32/TimeSpan/TimeProvider delays, timed CTS/CancelAfter, timed WaitAsync, serialized Timer and single-consumer PeriodicTimer through asynchronous hosted execution. ExecutionContext, threads, Task.Run and full timer/continuation-option surfaces remain unsupported. Blocking main/Wait/Result do not drive native timers; see [host clocks](host-clocks.md) and [time services](time-services.md). ConfigureAwait can alter flags passed to a source but cannot select a nonexistent .NET context.
 
@@ -67,15 +67,15 @@ Target source is deterministic for identical compiler and assembly inputs; insta
 
 Diagnostics retain method/IL context where available: TR2002 for missing implementation, TR2006 for local assignment, TR2110 for CFG/region boundaries, TR300x for linkage, TR310x for specialization and TR3200 for missing original-body contracts. This is not a complete verifier or sandbox; use external process isolation and quotas for untrusted inputs.
 
-## Native stream ABI: managed-stream-v1
+## Native stream ABI: managed-stream-v2
 
-JavaScript `stream(name,args=[],{maxSteps,cleanupSteps,yieldHost,signal})` returns a lazy, single-use async iterator with next/return/throw and cancel. Python `stream(name,args=(),*,max_steps=100000,cleanup_steps=None,yield_host=None)` returns an async iterator/context manager with aclose/cancel. Default cleanup budget equals the move budget. Positive safe-integer budgets bound pump iterations, not elapsed execution.
+JavaScript `stream(name,args=[],{maxSteps,cleanupSteps,yieldHost,signal,elementType})` returns a lazy, single-use async iterator with next/return/throw and cancel. Python `stream(name,args=(),*,max_steps=100000,cleanup_steps=None,yield_host=None,element_type=None)` returns an async iterator/context manager with aclose/cancel. Default cleanup budget equals the move budget. Positive safe-integer budgets bound pump iterations, not elapsed execution.
 
-The compiler roots a closed translated StreamCursor<T> for each exact-interface export and emits streamBindings; TR2220 identifies incomplete cursor linkage. Factories are invoked at first move, not adapter construction. Each cursor owns its CTS, enumerator and one pending operation. Close during a move requests cancellation, drains and consumes that same value, then disposes. The same ValueTask is never reissued or consumed twice by a close retry.
+The compiler discovers closed enumerable contracts through interfaces/bases and one Task/ValueTask wrapper, then roots StreamFactory<TSource,TElement> and StreamCursor<TElement> methods in the specialization fixed point. streamBindings contains per-element choices; TR2220 identifies incomplete linkage and TR2221 the bounded interface-graph limit. streamInfo/stream_info exposes available contracts before invocation. Factories are invoked at first move, not adapter construction. Each cursor owns its CTS, enumerator and one pending operation. Close during a move requests cancellation, drains and consumes that same value, then disposes. The same ValueTask is never reissued or consumed twice by a close retry.
 
 Exhaustion and move/current faults clean up; JS early loop exit calls return, while Python early exit needs async with, contextlib.aclosing or explicit aclose. Source-ignored cancellation or deferred disposal can raise StreamCleanupPendingError, retaining ownership and phase for a later close retry. Closed is false until retirement; activeStreams includes pending cleanup. There is no automatic finalizer or safe forced concurrent disposal of an uncompleted move.
 
-Native loop exception precedence is preserved, including JavaScript's preference for an existing body exception over close failure and Python's chaining of body errors under cleanup failure. Borrowed abort listeners and enumeration-owned references are retired at terminal close. Trusted completion hooks must not await operations on their own adapter. Cross-thread/cross-loop operations, arbitrary concrete/object/Task-wrapped stream exports and complete object serialization remain unsupported. [The full contract](host-streams.md) contains examples, pending cleanup recovery and validation details.
+Native loop exception precedence is preserved, including JavaScript's preference for an existing body exception over close failure and Python's chaining of body errors under cleanup failure. Borrowed abort listeners and enumeration-owned references are retired at terminal close. Trusted completion hooks must not await operations on their own adapter. Cross-thread/cross-loop operations, nested/custom awaitable factories, runtime-only generic construction and complete object serialization remain unsupported. Pending factory cleanup retains and drains the original operation, then acquires and disposes without moving; see [factory ownership](stream-exports.md). [The full contract](host-streams.md) contains examples, pending cleanup recovery and validation details.
 
 ## Additional diagnostics and provenance
 

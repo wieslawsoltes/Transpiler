@@ -1,6 +1,6 @@
 # Testing and reproducibility
 
-Updated 2026-09-17 for host clocks, delayed-task ownership and the expanded SSA/native regression matrix.
+Updated 2026-09-20 for generalized stream acquisition, host clocks and the expanded SSA/native regression matrix.
 
 ```bash
 dotnet build Transpiler.slnx -c Release
@@ -11,7 +11,7 @@ The package-free Python harness launches dotnet, Node and Python processes with 
 
 ## Current configured topology
 
-There are currently **261 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
+There are currently **268 registered harness cases**. The report independently records selected cases, observed results and whether the run is complete or filtered. Counts describe test groupings, not CLI support percentages; earlier 135-case evidence belongs to the earlier filter/forwarding milestone.
 
 For each positive console configuration the same DLL is executed with CoreCLR and translated to both targets. Stdout and process exit status must agree, and repeated emission must be byte-identical. The 110 ordinary configurations account for 220 generated console executions; the SSA matrix exercises those fixtures separately. The block-dispatch gate adds 48 target/configuration pairs with both instruction and block output: 96 executions. Host/graph/logical-heap cases run additional programs.
 
@@ -35,7 +35,7 @@ Instruction/block comparison requires equal outputs and fewer dispatch cases/sou
 
 Read [validation](validation-summary.md) for observed runs and exact environments. Preserve complete reports, source-archive commit identity, toolchain inputs and notices together. Do not count a configured or filtered suite as passed, or normalize output to hide backend differences. An intentional profile difference needs a documented dedicated test.
 
-Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context and calendar/thread integration beyond host-clock-v2, generalized host async-generator ABI, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
+Remaining qualification includes comprehensive exceptional/byref/type verification, additional native/interception filter coverage, concurrency/context and calendar/thread integration beyond host-clock-v2, nested/custom awaitable stream protocols and object transport, browser/OS/architecture matrices, memory-pressure tests without nondeterministic liveness assumptions and performance benchmarks. Compilation and generated execution remain outside any security sandbox guarantee.
 
 ## Native host-stream gate
 
@@ -43,7 +43,7 @@ Remaining qualification includes comprehensive exceptional/byref/type verificati
 
 Probe counters independently track issuing and consuming move/disposal. Disposal overlapping a move or issued twice fails. Tests cover ignored cancellation, external completion, pending disposal and close retry, native abort/asyncio cancellation, empty/faulting acquisition, Current failure, single-use ownership and terminal reference/listener cleanup. Python tests both async-with and contextlib.aclosing early exit. JavaScript and Python exception-precedence expectations are tested separately, not normalized into fake equivalence.
 
-The full local 125-case suite passed under SDK 10.0.100, Node 22.16.0 and Python 3.13.5. Focused host-stream success is also recorded separately and is not substituted for that full result. See the validation ledger for CI/artifact identity and scope. Abandoned or forever-pending resources are not certified as reclaimable by an async finalizer.
+At the earlier host-stream milestone, the full local 125-case suite passed under SDK 10.0.100, Node 22.16.0 and Python 3.13.5. Focused host-stream success is also recorded separately and is not substituted for that full result. See the validation ledger for CI/artifact identity and scope. Abandoned or forever-pending resources are not certified as reclaimable by an async finalizer.
 
 ## Filters, forwarding and verification gates
 
@@ -62,3 +62,9 @@ The independent clock-lifecycle CI job supplies early feedback; it does not repl
 ## Duration/provider and periodic timer gates
 
 `TRANSPILER_TEST_FILTER=host/time-services/ python tests/conformance.py` runs four Debug/Release × instruction/SSA groups, each with 22 scenarios on both hosted targets (176 scenario executions), repeated deterministic emission, managed-body provenance and CoreCLR oracles. `TimeValues` contributes four more duration/validation differential cases. The clock-lifecycle CI job retains its earlier timer report as clock-report.json before executing the expanded group. See [time-services.md](time-services.md).
+
+## Generalized stream discovery and acquisition
+
+`CompilerChecks --streams` runs 30 structural discovery/budget assertions. `TRANSPILER_TEST_FILTER=interop/stream-exports/ python tests/conformance.py` selects six Debug/Release × instruction/block/SSA cases. Each emits the same library DLL to JavaScript and Python, runs 45 lifecycle scenarios per host, compares with a CoreCLR consumer of that same DLL, checks translated Factory/Cursor method provenance and repeats byte-identical emission: 540 translated lifecycle executions in total.
+
+The independent stream-lifecycle CI job runs these checks without replacing the complete conformance job. Cases include concrete/inherited/interface/struct shapes, Task/ValueTask/source-backed acquisition, explicit erased and ambiguous choices, upfront rejection, null/fault/cancellation/acquisition errors, factory cleanup retry, no-move close, native abort/asyncio cancellation, delayed disposal, independent factories and exact Int64 struct elements. All tests retain their process timeouts. [The contract](stream-exports.md) distinguishes pending ownership from successful retirement.

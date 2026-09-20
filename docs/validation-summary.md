@@ -1,48 +1,50 @@
-# Validation evidence — duration and provider time services
+# Validation evidence — generalized stream exports
 
-Recorded 2026-09-17. The [host-clock-v1 validation ledger](history/validation-host-clock-v1-2026-09-17.md) and its preceding history preserve earlier exact revisions and counts. They do not describe the current API exclusions.
+Recorded 2026-09-20. The [duration/provider validation ledger](history/validation-time-services-2026-09-17.md) preserves the previous milestone and exact revision. Earlier counts and exclusions are historical, not the current stream contract.
 
-## Validated implementation
+## Exact implementation and source identity
 
-Commit: **`699cb46e1a2a780b4afaf9373a7039310b4daa45`**. Git tree: **`0ba460870719fa2101a9bae24e51452ad3b48f54`**. The uploaded tree equals the locally tested compiler/test/workflow index exactly.
+Validated commit: **`643ad75ad7613b1e4ddc7e4802a9bb0a6b35283d`**. Git tree: **`897478fa40668ac053d2baa454b57a43478e2bb1`**. The uploaded tree equals the locally tested compiler/test/workflow index exactly.
 
-[GitHub workflow 35251304501](https://github.com/wieslawsoltes/Transpiler/actions/runs/35251304501) completed successfully. Both the unfiltered **conformance** job and the expanded **clock-lifecycle** job passed. The latter includes old timer ownership scenarios and the new duration/provider/periodic-timer configurations, not merely standalone clock mocks.
+[GitHub workflow 35490492908](https://github.com/wieslawsoltes/Transpiler/actions/runs/35490492908) completed all three jobs successfully: **conformance**, **stream-lifecycle**, and **clock-lifecycle**. The full job passed build, the unfiltered differential gate, redistribution notices and artifact packaging.
 
-The full artifact **10510136043**, `transpiler-build-and-conformance`, has SHA-256 `4327672724da53b574555abd31e56deefb0ea9a70dd2ca92dbdcb549cf95da70`. The downloaded hash was checked. Its nested source ZIP comment identifies the commit above. All **201 compiler, test and workflow files** were compared byte-for-byte with the retained local source: **zero mismatches**.
+The full artifact **10598653391**, `transpiler-build-and-conformance`, has verified SHA-256 **`10a06127042a9c2a5f9bc52c8a60b6ec36092d9b57b856df5eabe87413f9722c`**. Its nested source ZIP comment identifies the implementation commit above. All **210 compiler, test and workflow files** were compared byte-for-byte against the retained source: **zero missing, extra or differing files**.
 
-The separate clock artifact **10509786299**, `transpiler-host-clock-regressions`, has verified SHA-256 `ef9e48b37641282fe0f68f79a4d56831ddd9825fdb7bf932b528b802c24ae2f4`. Its report is filtered; it is additional evidence, not a replacement for the complete gate.
+The focused stream artifact **10597909631**, `transpiler-stream-export-regressions`, has verified SHA-256 `7855c58567e739e37b014d67dd5dab47ede4d4c02694c32804a35a0578d5621d`. Its report selects six cases and is marked filtered; it is not substituted for the complete result.
 
-## Two observed complete runs
+## Two complete observed runs
 
 | Environment | Registered / selected | Passed | Failed | Complete / filter |
 |---|---|---|---|---|
-| Local Linux, SDK 10.0.100, Node 22.16.0, Python 3.13.5 | 261 / 261 | 261 | 0 | true / empty |
-| GitHub Linux x64, SDK 10.0.401, Node 22.23.2, Python 3.13.15 | 261 / 261 | 261 | 0 | true / empty |
+| Local Linux, SDK 10.0.100, Node 22.16.0, Python 3.13.5 | 268 / 268 | 268 | 0 | true / empty |
+| GitHub Linux x64, SDK 10.0.401, Node 22.23.2, Python 3.13.15 | 268 / 268 | 268 | 0 | true / empty |
 
-Both runs used two test workers. The local Release build reported zero warnings and errors. CI also passed its build and packaging steps. Counts represent registered test groups, not full CLI/BCL compatibility percentages.
+Both runs used two harness workers. The local Release build reported zero warnings and errors. CI passed its builds independently. Harness counts group tests; they are not full-CLI or BCL compatibility percentages.
 
-Local report SHA-256: `c83a6c2208196645f939cc1d42a3ec3b9a2e1c141251bdb5a5aaf93885659346`.
+Local report SHA-256: `a56da99b1e9ec381d23592645d3df8dc4e37ba26d24e9cd590699500f8a53c4d`.
 
-CI report SHA-256: `0535bbd7e6420d3f277fc924ef266c8b775557e0677b220feb75a40864309898`.
+CI complete report SHA-256: `20e3b9981aee3bac5d7002d9f240f270f3a234391ff537210c7ec99360b6f16f`.
 
-## New and retained coverage
+## New coverage and retained regressions
 
-The duration/provider batch adds four Debug/Release × instruction/SSA configurations. Each executes 22 lifecycle groups on JavaScript and Python: **176 translated scenario executions per full run**. Each configuration also checks repeated byte-identical emission, actual managed method-body provenance and a CoreCLR oracle built from the same C# library.
+One compiler gate runs **30 structural stream-discovery assertions**, including scoped/inherited/struct/multiple-interface shapes, one-wrapper recognition, erased catalogs, nested-wrapper rejection, cycle handling and the 4,096-node graph budget.
 
-TimeValues contributes four more differential configurations, exercising large signed ticks, component/hash/factory results, checked overflow, fractional timeout conversion, validation order, completed/infinite waits, timer disposal and PeriodicTimer boundaries. The earlier **26 direct clock checks** and **48 compiled timer lifecycle scenarios** remain passing in the complete suite, as do native C++, SSA, forwarding, verification, exception and stream tests.
+Six Debug/Release × instruction/block/SSA configurations execute **45 lifecycle scenarios per host: 540 translated scenario executions per complete run**. Each configuration emits a real library DLL, compares a CoreCLR consumer of that same DLL with the generated consumers, checks translated StreamFactory/StreamCursor method-body provenance, and requires byte-identical repeated emission.
 
-The new scenarios cover input success/fault/timeout/cancellation winners; loser observer and registration detachment; deadlines through 4,294,967,294 ms; serialized periodic callbacks; reentrant Change; DisposeAsync during a callback; callback-only constructor state; zero-period single shot; tick coalescing; rejection of overlapping/unconsumed waits; cancellation of one tick without stopping the timer; disposal voiding a pending tick; synchronous/throwing/reentrant custom providers; custom CTS duration forwarding and reset rejection; monotonic timestamps; and native event-loop execution.
+The lifecycle scenarios cover direct/concrete/inherited/custom-interface/value-type sources; Task/ValueTask/source-backed factories; explicit erased and ambiguous choices; no factory execution during inspection/upfront rejection; null/fault/cancellation/acquisition failures; one source consumption; pending-factory cleanup retries; close during acquisition without a move; abort/asyncio cancellation while waiting; delayed and faulting disposal; independent factories; exact Int64 fields; and repeated early-close cleanup. Ownership counters are checked at each scenario boundary.
 
-The nine-category boundary group still executes 18 target checks. Duration parsing, provider calendar APIs and Timer.Dispose(WaitHandle) are adjacent rejections; the newly supported APIs were promoted to positive tests rather than left in obsolete negative fixtures.
+All earlier native-stream, clock/time-service, native C++, SSA, filter, forwarding, verification, collections and logical-heap gates remain in the complete suite. The existing four host-stream configurations were also run separately before the complete suite and passed.
 
-## Standalone example
+## Independent generated-code replay and example
 
-`samples/TimeServices.cs` was separately compiled to standalone JavaScript and Python and executed through their asynchronous host entry points. Both produced 42, true, 3 and an active-timer count of zero (Python prints True). No .NET process was required to execute the generated modules. The source and commands are in [time-services.md](time-services.md).
+The downloaded focused CI artifact was replayed unchanged on local **Node 22.16.0** and **Python 3.13.5**. All **540 scenario executions** passed again, with zero active streams, factories, timers and host waiters at terminal cleanup. No compiler or .NET process participated in that replay. This is execution-only evidence, not a third complete compiler build.
 
-## Boundaries and documentation successor
+The new `samples/StreamFactories.cs` and both sample drivers were separately compiled and executed. They exercise Task<Counter>, explicitly selected ValueTask<object>, exact Int64 values, early break and awaited asynchronous disposal. Both print `9007199254740993`, `9007199254740994`, `9007199254740993`, `2`, and `0 0 0` on successive lines. [Commands and ownership rules](stream-exports.md).
 
-This implements the duration/provider/timed-wait/public Timer/PeriodicTimer continuation under **host-clock-v2**, including tests, examples and contract documentation. It does not provide full TimeSpan parsing/formatting/compound factories, calendar/time-zone TimeProvider APIs, Timer.ActiveCount/WaitHandle, native parallel callbacks, execution-context capture or finalizer-based timer cleanup. Explicit disposal and asynchronous hosted entry points remain required where stated.
+## Scope and documentation successor
 
-The compiler-wide [remaining plan](implementation-plan.md) still includes lossless signatures, deeper verification, broader BCL/reflection, generalized stream export discovery, context/thread and I/O services, ordinary-object collector integration, broader optimization and managed-object native backends. The successful timing milestone does not certify those separate capabilities.
+This completes the managed-stream-v2 generalized discovery and asynchronous factory-ownership slice. Nested/custom awaitable factories, runtime-only generic construction, complete ref-struct support, arbitrary object serialization, cross-module object transport and native threading/context semantics remain separate capabilities. The module-wide erased candidate catalog requires explicit selection and a checked actual-result cast, not a promise that every candidate fits every factory result.
 
-The final documentation/sample successor preserves all 201 validated compiler/test/workflow files unchanged. CI evidence belongs to the implementation commit above; the documentation successor does not claim an independent compiler-suite rerun.
+Compiler-wide remaining work includes lossless signatures/loader policy, deeper verification, broader BCL/reflection, context/thread and I/O services, ordinary-object collector integration, broader optimization and managed-object native backends. See [the remaining plan](implementation-plan.md).
+
+The documentation/sample successor preserves all 210 validated compiler/test/workflow files unchanged. CI evidence belongs to the exact implementation commit above; a documentation successor does not claim another compiler-suite run.

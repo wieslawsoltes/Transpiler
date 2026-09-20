@@ -1,6 +1,6 @@
 # Current compiler architecture
 
-Updated 2026-09-17 after the host-clock and timed-cancellation continuation. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
+Updated 2026-09-20 after generalized stream export and factory ownership support. Output schema 2; compiler profile `portable-mvp`; optional `portable-bcl-v1`. Earlier snapshots remain in [history](history/README.md); their status statements are historical.
 
 ## Pipeline and implementation origins
 
@@ -63,7 +63,7 @@ ExceptionDispatchInfo preserves the exception object for generated cleanup paths
 
 The managed Task.Delay/CTS implementation owns subscriptions and HostTimer handles. Seven exact internal clock signatures (including monotonic Now, with Int64 delay parameters) cross the host boundary; native JS/asyncio callbacks only publish readiness. Scheduler.RunOne executes the managed callback. Broadcast wake generations prevent concurrent host waiters from missing completion when another waiter consumes the last continuation. Blocking generated main/Wait/Result do not run the native event loop; see [host clocks](host-clocks.md).
 
-Host-invoked Task/ValueTask operations are explicit roots before pruning. invokeAsync/invoke_async adapts supported results and drives the queue. Native async-iterator adapters are now delivered for declared IAsyncEnumerable<T> exports. A closed managed StreamCursor<T> owns the enumerator, CTS and pending move/disposal; explicit host roots retain its methods. StreamMetadata exposes the versioned method table and fails incomplete linkage with TR2220. The JS/Python protocol layer owns loop integration, cancellation notifications and result unwrapping. Cleanup timeout retains the exact operation for retry, not a hidden second enumeration. See [host streams](host-streams.md). Step budgets are not execution preemption.
+Host-invoked Task/ValueTask operations are explicit roots before pruning. invokeAsync/invoke_async adapts supported results and drives the queue. Managed-stream-v2 discovers direct/concrete/inherited/value-type enumerable results, one Task/ValueTask wrapper and explicit erased/multi-interface choices in the generic fixed point. A translated StreamFactory<TSource,TElement> owns asynchronous acquisition and casts; a closed StreamCursor<T> owns the factory, enumerator, CTS and pending move/disposal; explicit host roots retain its methods. StreamMetadata exposes the versioned method table and fails incomplete linkage with TR2220. The JS/Python protocol layer owns loop integration, cancellation notifications and result unwrapping. Cleanup timeout retains the exact operation for retry, not a hidden second enumeration. See [host streams](host-streams.md) and [factory ownership](stream-exports.md). Step budgets are not execution preemption.
 
 ## Heap boundaries and evolution
 

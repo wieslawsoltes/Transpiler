@@ -1,6 +1,6 @@
 # Current compatibility ledger
 
-Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entries describe implemented/tested slices, not exhaustive ECMA/.NET compatibility. Metadata schema 2, profile `portable-mvp`, optional `portable-bcl-v1`.
+Updated 2026-09-20. Both targets share the compiler analysis and lowering. Entries describe implemented/tested slices, not exhaustive ECMA/.NET compatibility. Metadata schema 2, profile `portable-mvp`, optional `portable-bcl-v1`.
 
 | Area | Implemented/tested | Still outside the guarantee |
 |---|---|---|
@@ -25,13 +25,13 @@ Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entri
 | Time services | Tick-exact TimeSpan subset; TimeProvider timers/timestamps; serialized Timer; coalescing single-consumer PeriodicTimer | Full duration parsing/formatting/compound factories, calendars/time zones, Timer.ActiveCount/WaitHandle, native concurrency and finalizers |
 | ValueTask | Result/Task/source-backed values, awaiters, AsTask/Preserve, selected factories/equality | Pooling/allocation parity and arbitrary invalid multiple consumption |
 | Completion sources | IValueTaskSource interfaces and sequential reusable ManualResetValueTaskSourceCore | Multithreaded registration/completion, actual execution/scheduling context |
-| Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations; arbitrary concrete/Task-wrapped stream exports |
+| Iterators | Ordinary and asynchronous Roslyn state machines, independent enumeration, generic/covariant values | All compiler/runtime combinations; nested/custom awaitable stream factories and pattern-only/ref-struct enumeration |
 | Async disposal | IAsyncDisposable, configured await using, awaited finally, early exit and exception replacement | All resources/host lifetime integrations |
 | Exceptions | Throw/catch/rethrow/leave/finally, live-frame two-pass filters, persisted fault-clause tests, selected aggregation and identity-preserving ExceptionDispatchInfo | Exact .NET traces/Watson state, native exceptions, remote stack injection and exhaustive handler certification |
 | CFG / verification | Prefix/region/filter validation, stack joins, conservative exception-entry assignment, returned-byref origins and typed indirect access | Complete verifier, scoped-ref/interprocedural escape summaries, address-first and precise cleanup assignment |
 | Source emission | Instruction reference mode, validated basic blocks, bounded stack SSA and stack elimination with explicit fallback | General effect-reordering optimization, source maps, idiomatic reconstruction |
 | Host ABI | Primitive/string/selected array inputs, Task/ValueTask results, native stream protocol adapters, output/root APIs | General byref/callback/serialization/object transport across modules |
-| Host stream ownership | Lazy exact-interface exports, single-consumption moves/disposal, cancellation, Python close scopes, resumable cleanup | Uncooperative-source prompt cleanup, cross-loop/thread use, abandoned-adapter finalizers |
+| Host stream ownership | Lazy direct/concrete/inherited/struct and single Task/ValueTask factories; explicit erased/multi-interface selection; single-consumption acquisition/moves/disposal and resumable cleanup | Uncooperative-source prompt cleanup, cross-loop/thread use, abandoned-adapter finalizers |
 | Host lifetime | Weak references, identity hash, KeepAlive and explicit roots | Forced CLR collection, finalizers/resurrection/pinning |
 | Logical GC | Translated C# bounded mark/sweep with its own explicit-root graph oracle | Ordinary-object integration, implicit locals, relocation/generations/concurrency |
 | Platforms | Node/Python differential hosts; separate restricted native-std C++ scalar backend | Browser/OS/ARM64 qualification, managed-object native runtime, native GC and host services |
@@ -39,7 +39,7 @@ Updated 2026-09-17. Both targets share the compiler analysis and lowering. Entri
 
 ## Evidence and terminology
 
-The configured gate currently contains **261 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
+The configured gate currently contains **268 harness cases**. The report records observed success separately from registration and marks filtered runs explicitly. Ordinary/BCL, SSA, instruction/block, native scalar, host ABI, graph, filter, safety and logical-heap checks exercise different contracts; group counts are not full-CLI coverage percentages. Earlier 135-case reports describe the earlier filter/forwarding milestone, not the present corpus.
 
 The four new source/stream fixtures add eight differential cases, and the source-host/provenance test adds one extended case. Source callback flags, stale tokens, single consumption, reset reentrancy, cleanup and cancellation are directly tested. The current report, not the configured count, records observed success; see [validation](validation-summary.md).
 
@@ -54,3 +54,7 @@ The filter/identity/verification continuation adds six ordinary configurations a
 The eight additional harness cases cover four Debug/Release × instruction/SSA TimerValidation configurations, two direct clock-unit groups and two compiled lifecycle groups. The direct groups execute 13 checks per host; compiled groups execute 12 scenarios per host and dispatch mode, for 48 scenario executions, plus deterministic emission and CoreCLR async oracles. TimeSpan delay, public Timer and timed WaitAsync are now positive tests; duration parsing, provider calendar APIs and WaitHandle disposal are adjacent rejection tests. Read [host-clocks.md](host-clocks.md) for ownership and synchronous-entry limitations.
 
 The duration/provider continuation adds four TimeValues differential cases and four Debug/Release × instruction/SSA host configurations. Each host configuration executes 22 scenarios per target (176 total), managed-body provenance, deterministic emission and a CoreCLR oracle. See [time services](time-services.md).
+
+## Generalized stream-export continuation
+
+Managed-stream-v2 adds 30 bounded discovery assertions and six Debug/Release × instruction/block/SSA configurations. Each executes 45 lifecycle scenarios on each host: 540 scenario executions per complete run, plus same-PE CoreCLR oracles, deterministic re-emission and managed bridge provenance. The explicit factory/move/disposal ownership contract and remaining serialization boundaries are in [stream-exports.md](stream-exports.md). Counts do not certify untested shape combinations or complete CLI compatibility.

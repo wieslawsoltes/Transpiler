@@ -1,12 +1,12 @@
 # Remaining implementation plan
 
-Updated 2026-09-17. This ledger replaces obsolete initial-MVP exclusions. Completed slices remain qualified by [compatibility](compatibility.md), not by broad feature-family names.
+Updated 2026-09-20. This ledger replaces obsolete initial-MVP exclusions. Completed slices remain qualified by [compatibility](compatibility.md), not by broad feature-family names.
 
 ## Delivered foundation
 
 Real PE/CIL input and Roslyn frontend; explicit assembly linking/reference contracts; bounded generics; structs/nullable and managed references; tested interfaces/delegates/object bridges; collections/comparers/LINQ; original CoreLib slices; binary32/RVA/rectangular arrays and limited type handles; task composition/cancellation; source-backed ValueTask and async iterator/disposal protocols; protected-region CFG/block emission; host lifetime services and a separate translated logical collector; bounded stack SSA, restricted scalar C++ output, and host-clock-v2 durations, providers, timed waits and serialized/coalescing periodic timers.
 
-Native JS/Python async-iterator adapters are integrated. The latest continuation additionally implements two-pass managed filters, structural type rewriting, scoped forwarding and conservative byref/exception-local verification. It does not complete threading/contexts, arbitrary serialization or all BCL APIs. The existing instruction emitter remains a correctness oracle.
+Native JS/Python async-iterator adapters now include generalized factory acquisition. Earlier continuations implement two-pass managed filters, structural type rewriting, scoped forwarding and conservative byref/exception-local verification. It does not complete threading/contexts, arbitrary serialization or all BCL APIs. The existing instruction emitter remains a correctness oracle.
 
 ## 1. Typed identity, resolution and provenance
 
@@ -22,7 +22,7 @@ Acceptance: adversarial hand-authored IL and randomized CFG/type tests, instruct
 
 ## 3. Async host capability expansion
 
-Keep the single-thread/no-context profile explicit. The exact-interface native JS/Python async-iterator adapters are delivered with single-consumption, cancellation, scoped ownership and resumable cleanup. Next expand concrete/Task-wrapped export discovery and result marshalling only with explicit ownership/identity rules. The implemented host-clock-v2 adapter now backs Int32/TimeSpan/TimeProvider Task.Delay, timed CTS construction and CancelAfter with queued-reset history, notification-only native callbacks, idle waiting and cancellation/disposal cleanup. Public Timer/ITimer, single-consumer PeriodicTimer and timed WaitAsync are implemented. Remaining time scope includes calendar/time zones, full duration parsing/formatting/compound factories, Timer.ActiveCount/WaitHandle, external I/O completion and cross-thread integration; synchronous main/Wait/Result do not pump native event loops. Add context flow and concurrency only under separate implemented policies.
+Keep the single-thread/no-context profile explicit. The managed-stream-v2 JS/Python adapters now discover concrete/inherited/value-type enumerable contracts, one Task/ValueTask factory wrapper, and explicit erased/multi-interface element choices. Translated factory/cursor ownership includes single consumption, cancellation, pending-factory cleanup retries and no-move disposal on acquisition close. See [stream exports](stream-exports.md). Remaining stream scope includes nested/custom awaitable protocols, complete ref-struct verification and explicit object/interop serialization policies. The implemented host-clock-v2 adapter now backs Int32/TimeSpan/TimeProvider Task.Delay, timed CTS construction and CancelAfter with queued-reset history, notification-only native callbacks, idle waiting and cancellation/disposal cleanup. Public Timer/ITimer, single-consumer PeriodicTimer and timed WaitAsync are implemented. Remaining time scope includes calendar/time zones, full duration parsing/formatting/compound factories, Timer.ActiveCount/WaitHandle, external I/O completion and cross-thread integration; synchronous main/Wait/Result do not pump native event loops. Add context flow and concurrency only under separate implemented policies.
 
 Acceptance: cancellation before/during move, host early return/exception, disposal failure, source reuse, simultaneous host operations and callback cleanup. Respect ValueTask single-consumption and short-token rollover. A step budget is not a watchdog. No concurrent ManualResetValueTaskSourceCore contract is claimed until synchronization is implemented and tested.
 
